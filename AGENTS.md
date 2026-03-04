@@ -113,3 +113,81 @@ Use one preset for simplicity:
 - `--preset polished`: highest default polish for showcase videos.
 
 You can still override with explicit flags (`--speed`, `--fps`, `--theme`, `--keystroke-profile`).
+
+## Completion Contract (machine-readable)
+Treat each CLI call as complete only when both are true:
+1. Process exit code is `0`.
+2. JSON response has `"ok": true`.
+
+For `validate`, completion means:
+- `"ok": true`
+- no validation errors.
+
+For `execute`, completion means:
+- `"ok": true`
+- `"output"` points to the generated file.
+- `"transcript_path"` exists.
+- `"render"` exists with duration/paths.
+
+If `execute.ok` is `false`:
+- If `failures` contains step-level errors, revise script and rerun `validate`.
+- If failure is infra/runtime (missing ffmpeg/node/playwright), fix environment and rerun.
+
+## Agent Feedback Output (what to report upstream)
+After `execute`, return this summary to caller:
+- `status`: `success` or `failed`
+- `session_id`
+- `output`
+- `duration_secs` (from `render.duration_secs` if present)
+- `failed_step` (first failure path, if any)
+- `next_action` (`done`, `fix-script`, `fix-environment`)
+
+## Time Budget Guidance (timeouts + polling)
+Use broad, safe defaults; do not assume high-end hardware.
+
+Recommended polling interval:
+- every `20s` while `execute` is running.
+
+Recommended timeout policy:
+- soft timeout: `8m` (emit warning, keep running)
+- hard timeout: `20m` (mark failed and stop)
+
+Approximate end-to-end `execute` times:
+- Short demo (20-45s output):
+  - `quick`: `~45-120s`
+  - `balanced`: `~90-210s`
+  - `polished`: `~120-300s`
+- Medium demo (60-120s output):
+  - `quick`: `~2-5m`
+  - `balanced`: `~3-7m`
+  - `polished`: `~4-10m`
+- Long demo (3-5 min output):
+  - `quick`: `~6-12m`
+  - `balanced`: `~8-16m`
+  - `polished`: `~10-20m`
+
+If unknown, use this hard-timeout heuristic:
+- `hard_timeout_minutes = max(10, ceil(video_minutes * 4))`, capped at `20`.
+
+Example watchdog loop:
+```bash
+castkit execute --session "$SESSION" --script demo.json --non-interactive --preset polished --output demo.mp4 --json > execute.json &
+PID=$!
+START=$(date +%s)
+SOFT=480   # 8m
+HARD=1200  # 20m
+while kill -0 "$PID" 2>/dev/null; do
+  NOW=$(date +%s)
+  ELAPSED=$((NOW - START))
+  if [ "$ELAPSED" -ge "$HARD" ]; then
+    kill -TERM "$PID" 2>/dev/null || true
+    echo "hard-timeout"
+    break
+  fi
+  if [ "$ELAPSED" -ge "$SOFT" ]; then
+    echo "soft-timeout-warning"
+  fi
+  sleep 20
+done
+wait "$PID"
+```

@@ -41,6 +41,9 @@ cargo build
 6. `castkit validate --session <id> --script demo.json --json`
 7. `castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json`
 
+Automation rule:
+- Treat a step as successful only if process exit code is `0` and JSON has `"ok": true`.
+
 ## Execute presets (easy settings)
 - `--preset quick`: fastest iteration (`fast`, `minimal`, `laptop`, `fps=30`)
 - `--preset balanced`: good quality/speed tradeoff (`quality`, `clean`, `laptop`, `fps=45`)
@@ -86,6 +89,25 @@ Ready palette files: `examples/branding-clean.json`, `examples/branding-bold.jso
 - Typing sound + music are optional.
 - Output formats: `mp4` (default), `webm`, `gif` via `--format`.
 - Video encoding uses software `libx264` for stable quality.
+
+## Execution timing guidance
+Use broad timeout budgets because render cost depends on machine/per-preset quality.
+
+Polling:
+- Check every `20s` while `execute` runs.
+- If using cron/watchdog, check active jobs every `1m`.
+
+Timeout defaults:
+- soft timeout: `8m`
+- hard timeout: `20m`
+
+Approximate `execute` runtime:
+- Short output (20-45s video): `~1-5m` (preset-dependent)
+- Medium output (60-120s video): `~2-10m`
+- Long output (3-5 min video): `~6-20m`
+
+Fallback hard-timeout heuristic:
+- `hard_timeout_minutes = max(10, ceil(video_minutes * 4))`, cap at `20`.
 
 ## Renderer runtime override
 Default discovery:
