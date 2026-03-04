@@ -1,0 +1,10 @@
+[build]
+# This repo lives on /Volumes where rustc incremental lock files are not supported.
+# Build artifacts in /tmp restore incremental compilation and much faster edit/run loops.
+target-dir = "/tmp/castkit-target"
+
+[profile.dev]
+incremental = true
+
+[profile.test]
+incremental = true

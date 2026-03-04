@@ -1,0 +1,10 @@
+{
+  "title": "castkit",
+  "bg_primary": "#0D0F14",
+  "bg_secondary": "#10141B",
+  "text_primary": "#E8ECF4",
+  "text_muted": "#9EA8B8",
+  "command_text": "#D2D9E8",
+  "accent": "#BBC6DD",
+  "watermark_text": "castkit.com"
+}

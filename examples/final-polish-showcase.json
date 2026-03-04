@@ -1,0 +1,111 @@
+{
+  "version": "1",
+  "setup": [
+    {
+      "id": "setup_castkit_version",
+      "run": "bash -lc '/tmp/castkit-target/debug/castkit --version'",
+      "expect": {
+        "contains": "castkit",
+        "regex": null,
+        "exit_code": 0
+      },
+      "timeout_ms": 60000,
+      "source_refs": ["ref_help_0001"],
+      "manual_step": false,
+      "manual_reason": null
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene_handoff",
+      "title": "Evidence Retrieval",
+      "steps": [
+        {
+          "id": "step_list_refs",
+          "run": "bash -lc 'CASTKIT_HOME=/Volumes/borb/Coding/Personal/castkit/.castkit /tmp/castkit-target/debug/castkit handoff list --session sess_be993a36ec6a4caeba4886dcdf01bee5 --source help --page 1 --per-page 5 --json'",
+          "expect": {
+            "contains": "ref_help_0001",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        },
+        {
+          "id": "step_get_ref",
+          "run": "bash -lc 'CASTKIT_HOME=/Volumes/borb/Coding/Personal/castkit/.castkit /tmp/castkit-target/debug/castkit handoff get --session sess_be993a36ec6a4caeba4886dcdf01bee5 --ref ref_help_0003 --json'",
+          "expect": {
+            "contains": "ref_help_0003",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_runtime",
+      "title": "Render Runtime Controls",
+      "steps": [
+        {
+          "id": "step_execute_help",
+          "run": "bash -lc '/tmp/castkit-target/debug/castkit execute --help'",
+          "expect": {
+            "contains": "--non-interactive",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        },
+        {
+          "id": "step_validate_help",
+          "run": "bash -lc '/tmp/castkit-target/debug/castkit validate --help'",
+          "expect": {
+            "contains": "validate",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "check_init_session",
+      "run": "bash -lc 'CASTKIT_HOME=/Volumes/borb/Coding/Personal/castkit/.castkit /tmp/castkit-target/debug/castkit handoff init cargo --no-readme --json'",
+      "expect": {
+        "contains": "session_id",
+        "regex": null,
+        "exit_code": 0
+      },
+      "timeout_ms": 120000,
+      "source_refs": ["ref_help_0001"],
+      "manual_step": false,
+      "manual_reason": null
+    }
+  ],
+  "cleanup": [],
+  "redactions": [],
+  "audio": {
+    "typing": true,
+    "music_path": null
+  },
+  "branding": {
+    "title": "castkit final polish demo",
+    "watermark_text": "castkit.com",
+    "avatar_x": "fric",
+    "avatar_label": "@fric"
+  }
+}

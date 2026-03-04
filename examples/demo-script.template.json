@@ -1,0 +1,38 @@
+{
+  "version": "1",
+  "setup": [],
+  "scenes": [
+    {
+      "id": "scene_intro",
+      "title": "Initialize Project",
+      "steps": [
+        {
+          "id": "step_init",
+          "run": "<command from refs>",
+          "expect": {
+            "contains": null,
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    }
+  ],
+  "checks": [],
+  "cleanup": [],
+  "redactions": [],
+  "audio": {
+    "typing": true,
+    "music_path": null
+  },
+  "branding": {
+    "title": "castkit demo",
+    "watermark_text": "castkit.com"
+  }
+}

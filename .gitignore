@@ -1,0 +1,6 @@
+/target/
+/.castkit/
+/renderer-runtime/node_modules/
+/renderer/node_modules/
+/examples/*.mp4
+.DS_Store

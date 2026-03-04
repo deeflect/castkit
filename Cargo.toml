@@ -1,0 +1,40 @@
+[package]
+name = "castkit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Agent-native CLI demo video generator"
+license = "MIT"
+readme = "README.md"
+documentation = "https://docs.rs/castkit"
+keywords = ["cli", "demo", "video", "agent", "terminal"]
+categories = ["command-line-utilities", "multimedia::video"]
+exclude = [
+  "target/**",
+  ".castkit/**",
+  "examples/*.mp4",
+  "renderer-runtime/node_modules/**",
+  "renderer/node_modules/**",
+  "docs/plans/**",
+  ".DS_Store",
+]
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+regex = "1.11"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+shellexpand = "3.1"
+shell-words = "1.1"
+tokio = { version = "1.44", features = ["macros", "rt-multi-thread", "process", "time", "fs", "io-util"] }
+tempfile = "3.19"
+which = "7.0"
+hound = "3.5"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
