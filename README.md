@@ -35,16 +35,23 @@ cargo build
 - CI gates: `.github/workflows/ci.yml` and `.github/workflows/release-readiness.yml`
 
 ## Agent flow (non-interactive)
-1. `castkit handoff init <target> --json`
-2. `castkit handoff list --session <id> --source <help|readme|files|probes> --page 1 --per-page 20 --json`
-3. `castkit handoff get --session <id> --ref <ref_id> --json`
-4. Optional scaffold: `castkit plan scaffold --session <id> --output demo-script.json --max-scenes 3 --json`
-5. Write or refine strict `DemoScript` JSON (template: `examples/demo-script.template.json`)
-6. `castkit validate --session <id> --script demo.json --json`
-7. `castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json`
+1. Bootstrap contract: `castkit --json agent contract`
+2. Bootstrap schema: `castkit --json schema`
+3. `castkit handoff init <target> --json`
+4. `castkit handoff list --session <id> --source <help|readme|files|probes> --page 1 --per-page 20 --json`
+5. `castkit handoff get --session <id> --ref <ref_id> --json`
+6. Optional scaffold: `castkit plan scaffold --session <id> --output demo-script.json --max-scenes 3 --json`
+7. Write or refine strict `DemoScript` JSON (template: `examples/demo-script.template.json`)
+8. `castkit validate --session <id> --script demo.json --json`
+9. `castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json`
 
 Automation rule:
 - Treat a step as successful only if process exit code is `0` and JSON has `"ok": true`.
+
+Contract/schema commands:
+- Human-readable contract: `castkit agent contract`
+- Machine-readable contract: `castkit --json agent contract`
+- Machine-readable DemoScript schema: `castkit --json schema`
 
 ## Execute presets (easy settings)
 - `--preset quick`: fastest iteration (`fast`, `minimal`, `laptop`, `fps=30`)

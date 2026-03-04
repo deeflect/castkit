@@ -12,6 +12,18 @@ Produce a polished terminal demo video from evidence-backed steps, with no inven
 - Prefer `manual_step=true` only when no runnable command exists in evidence.
 - Keep output deterministic: non-interactive only (`--non-interactive`).
 
+## Bootstrap First (required)
+Do this before generating or validating any script:
+1. Load machine contract:
+```bash
+castkit --json agent contract
+```
+2. Load machine schema:
+```bash
+castkit --json schema
+```
+3. Use returned `contract_version` and schema as runtime source of truth.
+
 ## Required Flow
 1. Initialize handoff session:
 ```bash
@@ -40,6 +52,11 @@ castkit validate --session <session_id> --script demo.json --json
 7. Execute + render:
 ```bash
 castkit execute --session <session_id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json
+```
+
+Human-readable contract:
+```bash
+castkit agent contract
 ```
 
 ## Agent Output Contract (for script generation)

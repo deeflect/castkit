@@ -1,9 +1,11 @@
+pub mod agent_contract;
 pub mod branding;
 pub mod cli;
 pub mod execute;
 pub mod handoff;
 pub mod plan;
 pub mod render;
+pub mod schema;
 pub mod script;
 pub mod validate;
 
@@ -13,13 +15,23 @@ use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use serde::Serialize;
 
-use crate::cli::{Cli, Commands, HandoffCommands, PlanCommands};
+use crate::cli::{AgentCommands, Cli, Commands, HandoffCommands, PlanCommands};
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
     std::env::set_var("CASTKIT_VERBOSE", if cli.verbose { "1" } else { "0" });
 
     match cli.command {
+        Commands::Agent(agent_args) => match agent_args.command {
+            AgentCommands::Contract(_) => {
+                if cli.json {
+                    let contract = agent_contract::contract_json();
+                    print_output(true, &contract)?;
+                } else {
+                    println!("{}", agent_contract::contract_markdown().trim_end());
+                }
+            }
+        },
         Commands::Handoff(handoff_args) => match handoff_args.command {
             HandoffCommands::Init(args) => {
                 if cli.verbose {
@@ -63,6 +75,10 @@ pub async fn run() -> Result<()> {
                 print_output(cli.json, &response)?;
             }
         },
+        Commands::Schema(_) => {
+            let schema = schema::demo_script_schema();
+            print_output(true, &schema)?;
+        }
         Commands::Validate(args) => {
             if cli.verbose {
                 eprintln!(

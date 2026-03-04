@@ -19,11 +19,27 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    Agent(AgentArgs),
     Handoff(HandoffArgs),
     Plan(PlanArgs),
+    Schema(SchemaArgs),
     Validate(ValidateArgs),
     Execute(Box<ExecuteArgs>),
 }
+
+#[derive(Debug, Args)]
+pub struct AgentArgs {
+    #[command(subcommand)]
+    pub command: AgentCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentCommands {
+    Contract(AgentContractArgs),
+}
+
+#[derive(Debug, Args, Default)]
+pub struct AgentContractArgs {}
 
 #[derive(Debug, Args)]
 pub struct PlanArgs {
@@ -103,6 +119,9 @@ pub struct ValidateArgs {
     #[arg(long)]
     pub script: PathBuf,
 }
+
+#[derive(Debug, Args, Default)]
+pub struct SchemaArgs {}
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum OutputFormat {
@@ -289,5 +308,27 @@ mod tests {
             },
             _ => panic!("expected plan"),
         }
+    }
+
+    #[test]
+    fn parses_agent_contract() {
+        let cli = Cli::parse_from(["castkit", "agent", "contract", "--json"]);
+        match cli.command {
+            Commands::Agent(agent) => match agent.command {
+                AgentCommands::Contract(_) => {}
+            },
+            _ => panic!("expected agent"),
+        }
+        assert!(cli.json);
+    }
+
+    #[test]
+    fn parses_schema() {
+        let cli = Cli::parse_from(["castkit", "schema", "--json"]);
+        match cli.command {
+            Commands::Schema(_) => {}
+            _ => panic!("expected schema"),
+        }
+        assert!(cli.json);
     }
 }
