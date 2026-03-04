@@ -555,25 +555,27 @@ async function main() {
         cursor.style.display = 'none';
       }
 
-      const activeLine = (s.lines[s.active_row] || '');
-      const lineLen = activeLine.length;
+      const noZoom = Boolean(manifest.no_zoom);
       const cursorInfluence = Math.max(0, Math.min(1, cursorColF / 72));
       const isTyping = s.phase === 'typing';
       let targetZoom = 1.01;
       if (isTyping) targetZoom = 1.08 + (0.17 * cursorInfluence);
+      if (noZoom) targetZoom = 1.0;
       const zoomDelta = (targetZoom - this.zoom) * 0.05;
       this.zoom += Math.max(-0.0032, Math.min(0.0032, zoomDelta));
 
       const cursorPx = isTyping ? (cursorColF * 10.5) : 580;
       let targetCameraX = -(cursorPx - 580) * 0.12;
       targetCameraX = Math.max(-95, Math.min(95, targetCameraX));
+      if (noZoom) targetCameraX = 0;
       const cameraXDelta = (targetCameraX - this.cameraX) * 0.055;
       this.cameraX += Math.max(-1.4, Math.min(1.4, cameraXDelta));
 
       const rowInPixels = localRow * lineHeight;
       const yStrength = isTyping ? -0.165 : -0.09;
       const targetCameraY = (rowInPixels - 405) * yStrength;
-      const cameraYDelta = (targetCameraY - this.cameraY) * 0.06;
+      const targetCameraYFinal = noZoom ? 0 : targetCameraY;
+      const cameraYDelta = (targetCameraYFinal - this.cameraY) * 0.06;
       this.cameraY += Math.max(-1.9, Math.min(1.9, cameraYDelta));
 
       camera.style.transform = 'translate3d(' + this.cameraX.toFixed(2) + 'px, ' + this.cameraY.toFixed(2) + 'px, 0) scale(' + this.zoom.toFixed(4) + ')';

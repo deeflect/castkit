@@ -19,6 +19,13 @@ pub enum RenderSpeedPreset {
     Quality,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderOutputFormat {
+    Mp4,
+    Gif,
+    Webm,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum KeystrokeProfile {
     Mechanical,
@@ -29,13 +36,16 @@ pub enum KeystrokeProfile {
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
     pub output_path: PathBuf,
+    pub format: RenderOutputFormat,
     pub fps: u32,
+    pub no_zoom: bool,
     pub typing_sound: bool,
     pub music_path: Option<PathBuf>,
     pub branding: Option<BrandingConfig>,
     pub speed: RenderSpeedPreset,
     pub keystroke_profile: KeystrokeProfile,
     pub avatar_cache_dir: Option<PathBuf>,
+    pub verbose: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +101,7 @@ struct RenderManifest {
     width: u32,
     height: u32,
     fps: u32,
+    no_zoom: bool,
     duration_ms: u64,
     line_height: u32,
     branding: Option<BrandingConfig>,
@@ -110,6 +121,7 @@ pub fn render_screenstudio(
         width: WIDTH,
         height: HEIGHT,
         fps,
+        no_zoom: opts.no_zoom,
         duration_ms: ((duration_secs * 1000.0).ceil() as u64).max(1000),
         line_height: 24,
         branding: opts.branding,
@@ -135,6 +147,7 @@ pub fn render_screenstudio(
         fps,
         opts.speed,
         opts.avatar_cache_dir.as_deref(),
+        opts.verbose,
     )?;
 
     let typing_audio_path = if opts.typing_sound {
@@ -147,12 +160,30 @@ pub fn render_screenstudio(
         None
     };
 
+    let muxed_output_path = match opts.format {
+        RenderOutputFormat::Mp4 => opts.output_path.clone(),
+        RenderOutputFormat::Gif | RenderOutputFormat::Webm => std::env::temp_dir().join(format!(
+            "castkit-muxed-{}.mp4",
+            uuid::Uuid::new_v4().simple()
+        )),
+    };
+
     mux_to_final_output(
         &intermediate_video_path,
         typing_audio_path.as_deref(),
         opts.music_path.as_deref(),
-        &opts.output_path,
+        &muxed_output_path,
+        opts.verbose,
     )?;
+
+    if opts.format != RenderOutputFormat::Mp4 {
+        transcode_output(
+            &muxed_output_path,
+            &opts.output_path,
+            opts.format,
+            opts.verbose,
+        )?;
+    }
 
     Ok(RenderArtifacts {
         manifest_path,
@@ -168,6 +199,7 @@ fn run_playwright_renderer(
     fps: u32,
     speed: RenderSpeedPreset,
     avatar_cache_dir: Option<&Path>,
+    verbose: bool,
 ) -> Result<()> {
     let renderer_home = resolve_renderer_home()?;
     let renderer_script = renderer_home.join("render.mjs");
@@ -180,7 +212,7 @@ fn run_playwright_renderer(
 
     let mut command = Command::new("node");
     command
-        .arg(renderer_script)
+        .arg(&renderer_script)
         .arg("--manifest")
         .arg(manifest_path)
         .arg("--output")
@@ -194,6 +226,20 @@ fn run_playwright_renderer(
         });
     if let Some(dir) = avatar_cache_dir {
         command.arg("--avatar-cache-dir").arg(dir);
+    }
+
+    if verbose {
+        eprintln!(
+            "[castkit] renderer: node {} --manifest {} --output {} --fps {} --speed {}",
+            renderer_script.display(),
+            manifest_path.display(),
+            output_path.display(),
+            fps,
+            match speed {
+                RenderSpeedPreset::Fast => "fast",
+                RenderSpeedPreset::Quality => "quality",
+            }
+        );
     }
 
     let output = command.output().context("failed to run node renderer")?;
@@ -239,6 +285,7 @@ fn mux_to_final_output(
     typing_audio: Option<&Path>,
     music_audio: Option<&Path>,
     output_path: &Path,
+    verbose: bool,
 ) -> Result<()> {
     let ffmpeg = which::which("ffmpeg").context("ffmpeg not found in PATH")?;
 
@@ -321,6 +368,10 @@ fn mux_to_final_output(
     args.extend(["-movflags".to_string(), "+faststart".to_string()]);
     args.push(output_path.to_string_lossy().to_string());
 
+    if verbose {
+        eprintln!("[castkit] mux: ffmpeg {}", args.join(" "));
+    }
+
     let output = Command::new(ffmpeg)
         .args(&args)
         .output()
@@ -329,6 +380,80 @@ fn mux_to_final_output(
     if !output.status.success() {
         anyhow::bail!(
             "ffmpeg mux failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(())
+}
+
+fn transcode_output(
+    input_mp4: &Path,
+    output_path: &Path,
+    format: RenderOutputFormat,
+    verbose: bool,
+) -> Result<()> {
+    let ffmpeg = which::which("ffmpeg").context("ffmpeg not found in PATH")?;
+    let mut args = vec![
+        "-y".to_string(),
+        "-i".to_string(),
+        input_mp4.to_string_lossy().to_string(),
+    ];
+
+    match format {
+        RenderOutputFormat::Mp4 => {
+            args.extend([
+                "-c:v".to_string(),
+                "copy".to_string(),
+                "-c:a".to_string(),
+                "copy".to_string(),
+            ]);
+        }
+        RenderOutputFormat::Webm => {
+            args.extend([
+                "-c:v".to_string(),
+                "libvpx-vp9".to_string(),
+                "-b:v".to_string(),
+                "0".to_string(),
+                "-crf".to_string(),
+                "32".to_string(),
+                "-row-mt".to_string(),
+                "1".to_string(),
+                "-deadline".to_string(),
+                "good".to_string(),
+                "-cpu-used".to_string(),
+                "1".to_string(),
+                "-pix_fmt".to_string(),
+                "yuv420p".to_string(),
+                "-c:a".to_string(),
+                "libopus".to_string(),
+                "-b:a".to_string(),
+                "96k".to_string(),
+            ]);
+        }
+        RenderOutputFormat::Gif => {
+            args.extend([
+                "-an".to_string(),
+                "-vf".to_string(),
+                "fps=15,scale=1280:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse".to_string(),
+            ]);
+        }
+    }
+
+    args.push(output_path.to_string_lossy().to_string());
+
+    if verbose {
+        eprintln!("[castkit] transcode: ffmpeg {}", args.join(" "));
+    }
+
+    let output = Command::new(ffmpeg)
+        .args(&args)
+        .output()
+        .context("failed to run ffmpeg transcode")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "ffmpeg transcode failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
     }
