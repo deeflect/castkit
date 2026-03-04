@@ -81,7 +81,9 @@ Ready palette files: `examples/branding-clean.json`, `examples/branding-bold.jso
 - Command typing drives camera zoom/focus.
 - Model/output sections stay cleaner (no typing-focused zoom).
 - Long output is paginated with markers (`-- page x/y --`) instead of truncation.
+- `--no-zoom` locks camera framing (no pan/zoom motion).
 - Typing sound + music are optional.
+- Output formats: `mp4` (default), `webm`, `gif` via `--format`.
 
 ## Renderer runtime override
 Default discovery order:
@@ -97,4 +99,5 @@ CASTKIT_RENDERER_HOME=/abs/path/to/renderer-runtime castkit execute ...
 - Each executable step must have non-empty `source_refs`.
 - Each `source_ref` must exist in the session.
 - Unknown commands fail unless `manual_step=true` and `manual_reason` is set.
-- Inline secrets require redaction coverage.
+- Invalid `redactions[].pattern` regex fails validation.
+- Built-in secret redaction is always applied during execution output capture.

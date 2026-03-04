@@ -3,6 +3,7 @@ pub mod errors;
 use std::collections::BTreeSet;
 
 use anyhow::Result;
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::handoff::session_store::load_session;
@@ -10,9 +11,29 @@ use crate::script::{DemoScript, ScriptStep};
 
 pub use errors::{ValidationError, ValidationResult};
 
+static DOTENV_CREATE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(cp|touch|cat|printf|echo)\b.*\b\.env\b").expect("valid regex"));
+static SECRET_LITERAL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|(api[_-]?key|token|secret|password)\s*=\s*\S+)",
+    )
+    .expect("valid regex")
+});
+
 pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<ValidationResult> {
     let session = load_session(session_id)?;
     let mut errors = Vec::new();
+
+    for (idx, rule) in script.redactions.iter().enumerate() {
+        if let Err(e) = Regex::new(&rule.pattern) {
+            errors.push(err(
+                "INVALID_REDACTION_REGEX",
+                &format!("redactions[{idx}].pattern"),
+                &format!("invalid regex '{}': {e}", rule.pattern),
+                None,
+            ));
+        }
+    }
 
     let known_refs: BTreeSet<&str> = session.refs.iter().map(|r| r.ref_id.as_str()).collect();
 
@@ -243,9 +264,7 @@ fn is_shell_builtin(cmd: &str) -> bool {
 }
 
 fn step_creates_dotenv(step: &ScriptStep) -> bool {
-    let run = step.run.trim();
-    let copy = Regex::new(r"\b(cp|touch|cat|printf|echo)\b.*\b\.env\b").expect("regex");
-    copy.is_match(run)
+    DOTENV_CREATE_RE.is_match(step.run.trim())
 }
 
 fn run_mentions_dotenv(run: &str) -> bool {
@@ -253,9 +272,5 @@ fn run_mentions_dotenv(run: &str) -> bool {
 }
 
 fn has_secret_literal(run: &str) -> bool {
-    let secret = Regex::new(
-        r"(?i)(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|(api[_-]?key|token|secret|password)\s*=\s*\S+)",
-    )
-    .expect("regex");
-    secret.is_match(run)
+    SECRET_LITERAL_RE.is_match(run)
 }

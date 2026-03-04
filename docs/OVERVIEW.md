@@ -24,5 +24,5 @@ castkit is an agent-native CLI that converts verified terminal workflows into po
 
 ## Current v1 Scope
 - Terminal-only capture style
-- MP4 output path with optional audio mix
+- MP4/WebM/GIF output with optional audio mix
 - Configurable branding, avatar chip, watermark, scene tags

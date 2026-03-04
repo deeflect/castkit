@@ -97,3 +97,29 @@ fn validate_allows_manual_step_with_reason() {
     let res = validate_script(&session_id, &script).expect("validate");
     assert!(res.ok, "errors: {:?}", res.errors);
 }
+
+#[test]
+fn validate_fails_invalid_redaction_regex() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "setup":[],
+      "scenes":[{"id":"s1","title":"t","steps":[{"id":"a","run":"mycli run","expect":null,"timeout_ms":1000,"source_refs":["ref_help_0001"]}]}],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[{"pattern":"("}],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(!res.ok);
+    assert!(res
+        .errors
+        .iter()
+        .any(|e| e.code == "INVALID_REDACTION_REGEX"));
+}

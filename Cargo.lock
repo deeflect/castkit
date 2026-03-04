@@ -135,6 +135,7 @@ dependencies = [
  "chrono",
  "clap",
  "hound",
+ "once_cell",
  "predicates",
  "regex",
  "serde",

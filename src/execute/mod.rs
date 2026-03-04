@@ -1,3 +1,4 @@
+pub mod redact;
 pub mod runner;
 pub mod transcript;
 
@@ -21,6 +22,7 @@ use crate::render::{
 use crate::script::{DemoScript, ExpectCondition, ScriptStep};
 use crate::validate::{validate_script, ValidationError, ValidationResult};
 
+use self::redact::Redactor;
 use self::runner::run_step;
 use self::transcript::{ExecutionTranscript, SceneTranscript, StepRunRecord};
 
@@ -82,6 +84,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
     }
 
     let sandbox = tempfile::tempdir()?;
+    let redactor = Redactor::from_rules(&script.redactions)?;
     let mut transcript = ExecutionTranscript {
         session_id: args.session.clone(),
         started_at: Utc::now(),
@@ -99,6 +102,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         "setup",
         &mut transcript.setup,
         &mut failures,
+        &redactor,
     )
     .await;
 
@@ -108,6 +112,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         "checks",
         &mut transcript.checks,
         &mut failures,
+        &redactor,
     )
     .await;
 
@@ -124,6 +129,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
             &format!("scenes[{scene_idx}].steps"),
             &mut scene_transcript.steps,
             &mut failures,
+            &redactor,
         )
         .await;
 
@@ -136,6 +142,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         "cleanup",
         &mut transcript.cleanup,
         &mut failures,
+        &redactor,
     )
     .await;
 
@@ -221,6 +228,7 @@ async fn execute_group(
     group: &str,
     out: &mut Vec<StepRunRecord>,
     failures: &mut Vec<ExecutionFailure>,
+    redactor: &Redactor,
 ) {
     if !failures.is_empty() {
         return;
@@ -229,24 +237,27 @@ async fn execute_group(
     for (idx, step) in steps.iter().enumerate() {
         let path = format!("{group}[{idx}]");
         match run_step(cwd, step).await {
-            Ok(record) => {
-                let expectation_error = evaluate_expectation(step.expect.as_ref(), &record);
+            Ok(record_raw) => {
+                let expectation_error = evaluate_expectation(step.expect.as_ref(), &record_raw);
                 let has_expected_exit = step.expect.as_ref().and_then(|e| e.exit_code).is_some();
-                let failed =
-                    expectation_error.is_some() || (!has_expected_exit && record.status != "ok");
+                let failed = expectation_error.is_some()
+                    || (!has_expected_exit && record_raw.status != "ok");
+                let record = redactor.redact_record(record_raw);
                 out.push(record.clone());
                 if failed {
                     failures.push(ExecutionFailure {
                         step_path: path,
-                        reason: expectation_error
-                            .unwrap_or_else(|| "command exited non-zero".to_string()),
+                        reason: redactor.redact_text(
+                            &expectation_error
+                                .unwrap_or_else(|| "command exited non-zero".to_string()),
+                        ),
                         record,
                     });
                     break;
                 }
             }
             Err(err) => {
-                let record = StepRunRecord {
+                let record = redactor.redact_record(StepRunRecord {
                     id: step.id.clone(),
                     run: step.run.clone(),
                     stdout: String::new(),
@@ -255,11 +266,11 @@ async fn execute_group(
                     duration_ms: 0,
                     status: "failed".to_string(),
                     error: Some(err.to_string()),
-                };
+                });
                 out.push(record.clone());
                 failures.push(ExecutionFailure {
                     step_path: path,
-                    reason: err.to_string(),
+                    reason: redactor.redact_text(&err.to_string()),
                     record,
                 });
                 break;

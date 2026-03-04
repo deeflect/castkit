@@ -11,6 +11,8 @@ status: active
 
 Open-source Rust CLI that generates Screen Studio-quality demo videos of CLI tools. Point it at a binary, get a branded MP4.
 
+> Note: this document includes future-state ideas; current implemented CLI/runtime behavior is defined in `README.md` and `AGENTS.md`.
+
 ```bash
 castkit ./my-cli
 ```
@@ -49,7 +51,7 @@ castkit ./my-cli
 - **Alive, not static** — human typing cadence, auto-zoom, smooth easing on everything
 - **Safe by default** — auto-redacts secrets before rendering
 - **Agent-native** — any coding agent can call it. also works for humans
-- **Self-contained** — single binary + ffmpeg. no Node, no Docker, no browser runtime
+- **Portable runtime** — Rust CLI + Node/Playwright renderer + ffmpeg
 
 ### Pipeline Summary
 
@@ -75,21 +77,9 @@ SUBCOMMANDS:
   castkit validate --session <id> --script  Validate agent-authored DemoScript
   castkit execute --session <id> --script   Execute validated script and render output
 
-COMPATIBILITY SUBCOMMANDS (advanced/manual):
-  castkit discover <target>                 Internal stage access
-  castkit record <plan_or_script>           Internal stage access
-  castkit render <recording>                Internal stage access
-  castkit run <target>                      Single-command convenience path
-
 GLOBAL OPTIONS:
-  -o, --output <path>           Output file (default: ./demo.mp4)
-  -f, --format <fmt>            mp4 | gif | webm | png-sequence
-  -q, --quality <level>         draft (720p) | standard (1080p) | high (4K)
-  -s, --style <name>            dark | light | minimal | hacker | ocean
-      --theme <name>            Terminal color theme (catppuccin, tokyo-night, dracula, one-dark)
-      --font <name>             Monospace font (jetbrains-mono, fira-code, sf-mono, cascadia)
   -v, --verbose                 Show pipeline progress
-      --json                    Machine-readable output where applicable
+      --json                    Pretty JSON output for machine-friendly parsing
 
 HANDOFF OPTIONS:
       --source <name>           help | readme | files | probes
@@ -100,17 +90,14 @@ HANDOFF OPTIONS:
 
 VALIDATE/EXECUTE OPTIONS:
       --non-interactive         Required for agent workflow
-      --sandbox                 Run in temp dir (default: true)
-      --shell <path>            Shell to use (default: $SHELL or /bin/bash)
-      --cols <n>                Terminal columns (default: 100)
-      --rows <n>                Terminal rows (default: 30)
-      --timeout <secs>          Max recording time per scene (default: 30)
+      --output <path>           Output file (default: demo.mp4)
+      --format <fmt>            mp4 | gif | webm
       --fps <n>                 Frame rate (default: 60)
       --no-zoom                 Disable auto-zoom
-      --zoom-intensity <f>      Zoom factor 1.0-2.0 (default: 1.3)
-      --no-brand                Skip intro/outro
-      --redact-config <path>    Custom redaction rules
-      --redact-extra <pattern>  Additional regex pattern to redact
+      --preset <name>           quick | balanced | polished
+      --theme <name>            clean | bold | minimal
+      --speed <name>            fast | quality
+      --keystroke-profile <n>   mechanical | laptop | silent
 
 EXAMPLES:
   castkit handoff init ./target/release/mycli --json
