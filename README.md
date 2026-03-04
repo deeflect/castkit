@@ -36,9 +36,10 @@ cargo build
 1. `castkit handoff init <target> --json`
 2. `castkit handoff list --session <id> --source <help|readme|files|probes> --page 1 --per-page 20 --json`
 3. `castkit handoff get --session <id> --ref <ref_id> --json`
-4. Write strict `DemoScript` JSON (template: `examples/demo-script.template.json`)
-5. `castkit validate --session <id> --script demo.json --json`
-6. `castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json`
+4. Optional scaffold: `castkit plan scaffold --session <id> --output demo-script.json --max-scenes 3 --json`
+5. Write or refine strict `DemoScript` JSON (template: `examples/demo-script.template.json`)
+6. `castkit validate --session <id> --script demo.json --json`
+7. `castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json`
 
 ## Execute presets (easy settings)
 - `--preset quick`: fastest iteration (`fast`, `minimal`, `laptop`, `fps=30`)
@@ -99,5 +100,6 @@ CASTKIT_RENDERER_HOME=/abs/path/to/renderer-runtime castkit execute ...
 - Each executable step must have non-empty `source_refs`.
 - Each `source_ref` must exist in the session.
 - Unknown commands fail unless `manual_step=true` and `manual_reason` is set.
+- `.env` and common config file usage should be established in setup first.
 - Invalid `redactions[].pattern` regex fails validation.
 - Built-in secret redaction is always applied during execution output capture.

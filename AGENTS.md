@@ -28,12 +28,16 @@ castkit handoff list --session <session_id> --source probes --page 1 --per-page 
 ```bash
 castkit handoff get --session <session_id> --ref <ref_id> --json
 ```
-4. Write `DemoScript` JSON.
-5. Validate:
+4. Optional scaffold:
+```bash
+castkit plan scaffold --session <session_id> --output demo-script.json --max-scenes 3 --json
+```
+5. Write/refine `DemoScript` JSON.
+6. Validate:
 ```bash
 castkit validate --session <session_id> --script demo.json --json
 ```
-6. Execute + render:
+7. Execute + render:
 ```bash
 castkit execute --session <session_id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json
 ```

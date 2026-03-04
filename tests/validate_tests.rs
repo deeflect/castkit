@@ -123,3 +123,26 @@ fn validate_fails_invalid_redaction_regex() {
         .iter()
         .any(|e| e.code == "INVALID_REDACTION_REGEX"));
 }
+
+#[test]
+fn validate_fails_when_config_used_without_setup_creation() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "setup":[],
+      "scenes":[{"id":"s1","title":"t","steps":[{"id":"a","run":"mycli run --config config.toml","expect":null,"timeout_ms":1000,"source_refs":["ref_help_0001"]}]}],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(!res.ok);
+    assert!(res.errors.iter().any(|e| e.code == "ORDERING_CONFIG"));
+}

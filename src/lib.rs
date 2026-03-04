@@ -2,6 +2,7 @@ pub mod branding;
 pub mod cli;
 pub mod execute;
 pub mod handoff;
+pub mod plan;
 pub mod render;
 pub mod script;
 pub mod validate;
@@ -12,7 +13,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use serde::Serialize;
 
-use crate::cli::{Cli, Commands, HandoffCommands};
+use crate::cli::{Cli, Commands, HandoffCommands, PlanCommands};
 
 pub async fn run() -> Result<()> {
     let cli = Cli::parse();
@@ -46,6 +47,20 @@ pub async fn run() -> Result<()> {
                 }
                 let item = handoff::get_ref(args)?;
                 print_output(cli.json, &item)?;
+            }
+        },
+        Commands::Plan(plan_args) => match plan_args.command {
+            PlanCommands::Scaffold(args) => {
+                if cli.verbose {
+                    eprintln!(
+                        "[castkit] plan scaffold session={} output={} max_scenes={}",
+                        args.session,
+                        args.output.display(),
+                        args.max_scenes
+                    );
+                }
+                let response = plan::scaffold(args)?;
+                print_output(cli.json, &response)?;
             }
         },
         Commands::Validate(args) => {

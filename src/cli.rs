@@ -20,8 +20,30 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     Handoff(HandoffArgs),
+    Plan(PlanArgs),
     Validate(ValidateArgs),
     Execute(Box<ExecuteArgs>),
+}
+
+#[derive(Debug, Args)]
+pub struct PlanArgs {
+    #[command(subcommand)]
+    pub command: PlanCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PlanCommands {
+    Scaffold(PlanScaffoldArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PlanScaffoldArgs {
+    #[arg(long)]
+    pub session: String,
+    #[arg(long, default_value = "demo-script.json")]
+    pub output: PathBuf,
+    #[arg(long, default_value_t = 3)]
+    pub max_scenes: usize,
 }
 
 #[derive(Debug, Args)]
@@ -241,6 +263,31 @@ mod tests {
                 assert_eq!(args.output, PathBuf::from("out.mp4"));
             }
             _ => panic!("expected execute"),
+        }
+    }
+
+    #[test]
+    fn parses_plan_scaffold() {
+        let cli = Cli::parse_from([
+            "castkit",
+            "plan",
+            "scaffold",
+            "--session",
+            "sess_42",
+            "--output",
+            "demo-script.json",
+            "--max-scenes",
+            "5",
+        ]);
+        match cli.command {
+            Commands::Plan(p) => match p.command {
+                PlanCommands::Scaffold(args) => {
+                    assert_eq!(args.session, "sess_42");
+                    assert_eq!(args.output, PathBuf::from("demo-script.json"));
+                    assert_eq!(args.max_scenes, 5);
+                }
+            },
+            _ => panic!("expected plan"),
         }
     }
 }

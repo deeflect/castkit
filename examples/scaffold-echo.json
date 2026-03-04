@@ -1,0 +1,84 @@
+{
+  "version": "1",
+  "setup": [],
+  "scenes": [
+    {
+      "id": "scene_01",
+      "title": "CLI Overview",
+      "steps": [
+        {
+          "id": "step_01_help",
+          "run": "echo --help",
+          "expect": {
+            "contains": "usage",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_02",
+      "title": "Explore 'help'",
+      "steps": [
+        {
+          "id": "step_02_help",
+          "run": "echo help --help",
+          "expect": {
+            "contains": "help",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "check_version",
+      "run": "echo --version",
+      "expect": {
+        "contains": null,
+        "regex": null,
+        "exit_code": 0
+      },
+      "timeout_ms": 120000,
+      "source_refs": [
+        "ref_help_0001"
+      ],
+      "manual_step": false,
+      "manual_reason": null
+    }
+  ],
+  "cleanup": [],
+  "redactions": [],
+  "audio": {
+    "typing": true,
+    "music_path": null
+  },
+  "branding": {
+    "title": "castkit demo",
+    "bg_primary": null,
+    "bg_secondary": null,
+    "text_primary": null,
+    "text_muted": null,
+    "command_text": null,
+    "accent": null,
+    "watermark_text": "castkit.com",
+    "avatar_x": null,
+    "avatar_url": null,
+    "avatar_label": null
+  }
+}

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import Convert from 'ansi-to-html';
 
@@ -84,6 +84,74 @@ async function resolveAvatarWithCache(branding, cacheDir) {
   return branding;
 }
 
+async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath }) {
+  const fastMode = speed === 'fast';
+  const frameCount = Math.max(1, Math.ceil((manifest.duration_ms / 1000) * fps));
+  const ffmpegArgs = [
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'image2pipe',
+    '-vcodec',
+    fastMode ? 'mjpeg' : 'png',
+    '-framerate',
+    String(fps),
+    '-i',
+    '-',
+    '-vf',
+    fastMode
+      ? 'format=yuv420p'
+      : 'scale=1920:1080:flags=lanczos,unsharp=5:5:0.35:5:5:0.0,format=yuv420p',
+    '-c:v',
+    'libx264',
+    '-preset',
+    fastMode ? 'veryfast' : 'slow',
+    '-crf',
+    fastMode ? '20' : '12',
+    '-profile:v',
+    'high',
+    '-level',
+    '4.2',
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    outputPath
+  ];
+
+  const ffmpeg = spawn('ffmpeg', ffmpegArgs, {
+    stdio: ['pipe', 'ignore', 'pipe']
+  });
+  let ffmpegErr = '';
+  ffmpeg.stderr.on('data', (chunk) => {
+    ffmpegErr += chunk.toString();
+  });
+
+  for (let i = 0; i < frameCount; i += 1) {
+    const tMs = Math.min(manifest.duration_ms, Math.round((i * 1000) / fps));
+    await page.evaluate((timeMs) => {
+      window.__renderAt(timeMs);
+    }, tMs);
+
+    const screenshotOpts = fastMode
+      ? { type: 'jpeg', quality: 92 }
+      : { type: 'png' };
+    const frameBuffer = await page.screenshot(screenshotOpts);
+    if (!ffmpeg.stdin.write(frameBuffer)) {
+      await once(ffmpeg.stdin, 'drain');
+    }
+  }
+
+  ffmpeg.stdin.end();
+  const [code] = await once(ffmpeg, 'close');
+  if (code !== 0) {
+    throw new Error(`ffmpeg encode failed (${code}): ${ffmpegErr.trim()}`);
+  }
+  return frameCount;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (!args.manifest || !args.output) {
@@ -112,7 +180,6 @@ async function main() {
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
-  const frameRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'castkit-frames-'));
   const browser = await chromium.launch({ headless: true });
   const viewport = speed === 'fast'
     ? { width: 1920, height: 1080 }
@@ -603,68 +670,18 @@ async function main() {
     return Promise.resolve();
   });
 
-  const frameCount = Math.max(1, Math.ceil((manifest.duration_ms / 1000) * fps));
-  const fastMode = speed === 'fast';
-  const frameExt = fastMode ? 'jpg' : 'png';
-  for (let i = 0; i < frameCount; i += 1) {
-    const tMs = Math.min(manifest.duration_ms, Math.round((i * 1000) / fps));
-    await page.evaluate((timeMs) => {
-      window.__renderAt(timeMs);
-    }, tMs);
-
-    const framePath = path.join(frameRoot, `frame-${String(i + 1).padStart(6, '0')}.${frameExt}`);
-    if (fastMode) {
-      await page.screenshot({ path: framePath, type: 'jpeg', quality: 92 });
-    } else {
-      await page.screenshot({ path: framePath, type: 'png' });
-    }
-  }
-
-  await browser.close();
-
-  const ffmpeg = spawnSync(
-    'ffmpeg',
-    [
-      '-y',
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-framerate',
-      String(fps),
-      '-i',
-      path.join(frameRoot, `frame-%06d.${frameExt}`),
-      '-vf',
-      fastMode
-        ? 'format=yuv420p'
-        : 'scale=1920:1080:flags=lanczos,unsharp=5:5:0.35:5:5:0.0,format=yuv420p',
-      '-c:v',
-      'libx264',
-      '-preset',
-      fastMode ? 'veryfast' : 'slow',
-      '-crf',
-      fastMode ? '20' : '12',
-      '-profile:v',
-      'high',
-      '-level',
-      '4.2',
-      '-pix_fmt',
-      'yuv420p',
-      '-movflags',
-      '+faststart',
+  let frameCount = 0;
+  try {
+    frameCount = await encodeFramesViaPipe({
+      page,
+      manifest,
+      fps,
+      speed,
       outputPath
-    ],
-    { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 }
-  );
-
-  if (ffmpeg.status !== 0) {
-    console.error('ffmpeg encode failed');
-    console.error(`frames preserved at: ${frameRoot}`);
-    console.error(ffmpeg.stderr || '');
-    process.exit(ffmpeg.status ?? 1);
+    });
+  } finally {
+    await browser.close();
   }
-
-  // Cleanup can be slow with thousands of PNGs; do it in background.
-  fs.rm(frameRoot, { recursive: true, force: true }).catch(() => {});
 
   process.stdout.write(JSON.stringify({ ok: true, output: outputPath, fps, frames: frameCount, speed }) + '\n');
 }

@@ -74,6 +74,7 @@ SUBCOMMANDS:
   castkit handoff init <target>             Build discovery session + refs index
   castkit handoff list --session <id>       List indexed refs by source, paginated
   castkit handoff get --session <id> --ref  Fetch exact content for one ref
+  castkit plan scaffold --session <id>      Generate a strict script scaffold from evidence refs
   castkit validate --session <id> --script  Validate agent-authored DemoScript
   castkit execute --session <id> --script   Execute validated script and render output
 

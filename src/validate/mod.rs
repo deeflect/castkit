@@ -13,6 +13,13 @@ pub use errors::{ValidationError, ValidationResult};
 
 static DOTENV_CREATE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\b(cp|touch|cat|printf|echo)\b.*\b\.env\b").expect("valid regex"));
+static CONFIG_CREATE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b(cp|touch|cat|printf|echo)\b.*\b(config\.toml|settings\.toml|castkit\.toml)\b")
+        .expect("valid regex")
+});
+static CONFIG_MENTION_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b(config\.toml|settings\.toml|castkit\.toml)\b").expect("valid regex")
+});
 static SECRET_LITERAL_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(
         r"(?i)(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|(api[_-]?key|token|secret|password)\s*=\s*\S+)",
@@ -51,9 +58,11 @@ pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<Validati
         script,
         &mut errors,
         false,
+        false,
     );
 
     let setup_has_dotenv = script.setup.iter().any(step_creates_dotenv);
+    let setup_has_config = script.setup.iter().any(step_creates_config);
 
     for (scene_index, scene) in script.scenes.iter().enumerate() {
         let prefix = format!("scenes[{scene_index}].steps");
@@ -65,6 +74,7 @@ pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<Validati
             script,
             &mut errors,
             !setup_has_dotenv,
+            !setup_has_config,
         );
     }
 
@@ -76,6 +86,7 @@ pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<Validati
         script,
         &mut errors,
         !setup_has_dotenv,
+        !setup_has_config,
     );
 
     validate_steps(
@@ -86,6 +97,7 @@ pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<Validati
         script,
         &mut errors,
         !setup_has_dotenv,
+        !setup_has_config,
     );
 
     Ok(ValidationResult::from_errors(errors))
@@ -100,6 +112,7 @@ fn validate_steps(
     script: &DemoScript,
     errors: &mut Vec<ValidationError>,
     enforce_dotenv_creation: bool,
+    enforce_config_creation: bool,
 ) {
     for (idx, step) in steps.iter().enumerate() {
         let path = format!("{group_path}[{idx}]");
@@ -157,6 +170,15 @@ fn validate_steps(
                 &path,
                 "step references .env but setup does not create/copy .env",
                 Some("add a setup step like 'cp .env.example .env'"),
+            ));
+        }
+
+        if enforce_config_creation && run_mentions_config_file(&step.run) {
+            errors.push(err(
+                "ORDERING_CONFIG",
+                &path,
+                "step references config file but setup does not create/copy one",
+                Some("add a setup step like 'cp config.example.toml config.toml'"),
             ));
         }
 
@@ -269,6 +291,14 @@ fn step_creates_dotenv(step: &ScriptStep) -> bool {
 
 fn run_mentions_dotenv(run: &str) -> bool {
     run.contains(".env")
+}
+
+fn step_creates_config(step: &ScriptStep) -> bool {
+    CONFIG_CREATE_RE.is_match(step.run.trim())
+}
+
+fn run_mentions_config_file(run: &str) -> bool {
+    CONFIG_MENTION_RE.is_match(run)
 }
 
 fn has_secret_literal(run: &str) -> bool {

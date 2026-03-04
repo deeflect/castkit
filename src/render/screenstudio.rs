@@ -12,6 +12,7 @@ const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
 const OUTPUT_WRAP_WIDTH: usize = 110;
 const OUTPUT_PAGE_LINES: usize = 30;
+const OUTPUT_SNAPSHOT_STEP: usize = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub enum RenderSpeedPreset {
@@ -133,7 +134,7 @@ pub fn render_screenstudio(
         "castkit-render-manifest-{}.json",
         uuid::Uuid::new_v4().simple()
     ));
-    fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)
+    fs::write(&manifest_path, serde_json::to_vec(&manifest)?)
         .with_context(|| format!("failed writing {}", manifest_path.display()))?;
 
     let intermediate_video_path = std::env::temp_dir().join(format!(
@@ -681,18 +682,25 @@ fn stream_output(
 
         lines.push(String::new());
         let row = lines.len().saturating_sub(1);
+        let char_count = line.chars().count();
 
         for (idx, ch) in line.chars().enumerate() {
             lines[row].push(ch);
             *t += output_char_delay(ch, idx);
-            push_snapshot(
-                snapshots,
-                *t,
-                lines,
-                row,
-                lines[row].chars().count(),
-                SnapshotPhase::Output,
-            );
+            let at_boundary = idx + 1 == char_count
+                || idx == 0
+                || idx % OUTPUT_SNAPSHOT_STEP == 0
+                || matches!(ch, ' ' | '/' | '\\' | ':' | '=' | '-');
+            if at_boundary {
+                push_snapshot(
+                    snapshots,
+                    *t,
+                    lines,
+                    row,
+                    lines[row].chars().count(),
+                    SnapshotPhase::Output,
+                );
+            }
         }
 
         *t += 0.012;
