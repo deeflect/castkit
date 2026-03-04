@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
 import Convert from 'ansi-to-html';
 
@@ -84,9 +84,123 @@ async function resolveAvatarWithCache(branding, cacheDir) {
   return branding;
 }
 
-async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath }) {
+function normalizedEncoderMode(modeRaw) {
+  const mode = String(modeRaw || 'auto').toLowerCase();
+  if (mode === 'software' || mode === 'hardware' || mode === 'auto') return mode;
+  return 'auto';
+}
+
+function listEncodersText() {
+  const probe = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024
+  });
+  return `${probe.stdout || ''}\n${probe.stderr || ''}`;
+}
+
+function hasEncoder(encodersText, codec) {
+  return new RegExp(`\\b${codec}\\b`).test(encodersText);
+}
+
+function codecUsable(codec) {
+  const probe = spawnSync(
+    'ffmpeg',
+    [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=black:s=64x64:d=0.10',
+      '-frames:v',
+      '1',
+      '-c:v',
+      codec,
+      '-f',
+      'null',
+      '-'
+    ],
+    { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }
+  );
+  return probe.status === 0;
+}
+
+function hardwareCandidates() {
+  if (process.platform === 'darwin') return ['h264_videotoolbox'];
+  if (process.platform === 'win32') return ['h264_nvenc', 'h264_qsv', 'h264_amf'];
+  return ['h264_nvenc', 'h264_qsv'];
+}
+
+function resolveVideoEncoder(modeRaw) {
+  const mode = normalizedEncoderMode(modeRaw);
+  if (mode === 'software') return { codec: 'libx264', modeUsed: 'software' };
+
+  const encoders = listEncodersText();
+  for (const codec of hardwareCandidates()) {
+    if (!hasEncoder(encoders, codec)) continue;
+    if (!codecUsable(codec)) continue;
+    return { codec, modeUsed: 'hardware' };
+  }
+
+  if (mode === 'hardware') {
+    throw new Error('hardware encoder requested but no supported hardware codec is available');
+  }
+  return { codec: 'libx264', modeUsed: 'software' };
+}
+
+function softwareEncodeArgs({ fastMode, balancedQuality }) {
+  const vf = fastMode
+    ? 'format=yuv420p'
+    : balancedQuality
+      ? 'scale=1920:1080:flags=bicubic,format=yuv420p'
+      : 'scale=1920:1080:flags=lanczos,unsharp=5:5:0.35:5:5:0.0,format=yuv420p';
+  return [
+    '-vf',
+    vf,
+    '-c:v',
+    'libx264',
+    '-preset',
+    fastMode ? 'veryfast' : balancedQuality ? 'medium' : 'slow',
+    '-crf',
+    fastMode ? '20' : balancedQuality ? '16' : '12',
+    '-profile:v',
+    'high',
+    '-level',
+    '4.2',
+    '-pix_fmt',
+    'yuv420p'
+  ];
+}
+
+function hardwareEncodeArgs({ codec, fastMode, balancedQuality }) {
+  const targetBitrate = fastMode ? '6M' : balancedQuality ? '10M' : '14M';
+  const maxRate = fastMode ? '9M' : balancedQuality ? '14M' : '18M';
+  const bufSize = fastMode ? '12M' : balancedQuality ? '20M' : '24M';
+  return [
+    '-vf',
+    'scale=1920:1080:flags=bicubic,format=yuv420p',
+    '-c:v',
+    codec,
+    '-b:v',
+    targetBitrate,
+    '-maxrate',
+    maxRate,
+    '-bufsize',
+    bufSize,
+    '-pix_fmt',
+    'yuv420p'
+  ];
+}
+
+async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath, encoderMode }) {
   const fastMode = speed === 'fast';
+  const balancedQuality = !fastMode && fps <= 45;
   const frameCount = Math.max(1, Math.ceil((manifest.duration_ms / 1000) * fps));
+  const encoder = resolveVideoEncoder(encoderMode);
+  const codecArgs = encoder.modeUsed === 'hardware'
+    ? hardwareEncodeArgs({ codec: encoder.codec, fastMode, balancedQuality })
+    : softwareEncodeArgs({ fastMode, balancedQuality });
   const ffmpegArgs = [
     '-y',
     '-hide_banner',
@@ -100,22 +214,7 @@ async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath }) {
     String(fps),
     '-i',
     '-',
-    '-vf',
-    fastMode
-      ? 'format=yuv420p'
-      : 'scale=1920:1080:flags=lanczos,unsharp=5:5:0.35:5:5:0.0,format=yuv420p',
-    '-c:v',
-    'libx264',
-    '-preset',
-    fastMode ? 'veryfast' : 'slow',
-    '-crf',
-    fastMode ? '20' : '12',
-    '-profile:v',
-    'high',
-    '-level',
-    '4.2',
-    '-pix_fmt',
-    'yuv420p',
+    ...codecArgs,
     '-movflags',
     '+faststart',
     outputPath
@@ -149,7 +248,7 @@ async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath }) {
   if (code !== 0) {
     throw new Error(`ffmpeg encode failed (${code}): ${ffmpegErr.trim()}`);
   }
-  return frameCount;
+  return { frameCount, videoEncoder: encoder.codec, encoderModeUsed: encoder.modeUsed };
 }
 
 async function main() {
@@ -163,6 +262,7 @@ async function main() {
   const outputPath = path.resolve(args.output);
   const fps = Math.max(24, Number(args.fps ?? 60));
   const speed = String(args.speed ?? 'quality').toLowerCase() === 'fast' ? 'fast' : 'quality';
+  const encoderMode = normalizedEncoderMode(args['encoder-mode']);
   const avatarCacheDir = args['avatar-cache-dir'] ? path.resolve(args['avatar-cache-dir']) : null;
 
   const rawManifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -671,19 +771,34 @@ async function main() {
   });
 
   let frameCount = 0;
+  let videoEncoder = 'libx264';
+  let encoderModeUsed = 'software';
   try {
-    frameCount = await encodeFramesViaPipe({
+    const encodeResult = await encodeFramesViaPipe({
       page,
       manifest,
       fps,
       speed,
-      outputPath
+      outputPath,
+      encoderMode
     });
+    frameCount = encodeResult.frameCount;
+    videoEncoder = encodeResult.videoEncoder;
+    encoderModeUsed = encodeResult.encoderModeUsed;
   } finally {
     await browser.close();
   }
 
-  process.stdout.write(JSON.stringify({ ok: true, output: outputPath, fps, frames: frameCount, speed }) + '\n');
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    output: outputPath,
+    fps,
+    frames: frameCount,
+    speed,
+    encoder_requested: encoderMode,
+    encoder_mode_used: encoderModeUsed,
+    video_encoder: videoEncoder
+  }) + '\n');
 }
 
 main().catch((err) => {

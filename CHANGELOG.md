@@ -15,6 +15,7 @@
 - Long output rendering now uses pagination markers instead of truncation.
 - `execute --format` now supports `mp4|webm|gif`.
 - `execute --no-zoom` now disables camera motion.
+- `execute --encoder` now supports `auto|software|hardware` with safe cross-platform fallback.
 - Output redaction is now enforced at execution-time (built-in secret patterns + custom regex rules).
 - Discovery commands now use timeout protection and broader target-root file discovery.
 - Renderer now streams frames directly to ffmpeg (no frame file spooling).

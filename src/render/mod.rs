@@ -1,6 +1,6 @@
 pub mod screenstudio;
 
 pub use screenstudio::{
-    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderOptions, RenderOutputFormat,
-    RenderSpeedPreset,
+    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderEncoderMode, RenderOptions,
+    RenderOutputFormat, RenderSpeedPreset,
 };

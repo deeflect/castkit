@@ -1,0 +1,126 @@
+{
+  "version": "1",
+  "setup": [],
+  "scenes": [
+    {
+      "id": "scene_01",
+      "title": "CLI Overview",
+      "steps": [
+        {
+          "id": "step_01_help",
+          "run": "dee-wiki --help",
+          "expect": {
+            "contains": "usage",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_02",
+      "title": "Explore 'Debug'",
+      "steps": [
+        {
+          "id": "step_02_Debug",
+          "run": "dee-wiki Debug --help",
+          "expect": {
+            "contains": "Debug",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_03",
+      "title": "Explore 'Output'",
+      "steps": [
+        {
+          "id": "step_03_Output",
+          "run": "dee-wiki Output --help",
+          "expect": {
+            "contains": "Output",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_04",
+      "title": "Explore 'Print'",
+      "steps": [
+        {
+          "id": "step_04_Print",
+          "run": "dee-wiki Print --help",
+          "expect": {
+            "contains": "Print",
+            "regex": null,
+            "exit_code": 0
+          },
+          "timeout_ms": 120000,
+          "source_refs": [
+            "ref_help_0001"
+          ],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "check_version",
+      "run": "dee-wiki --version",
+      "expect": {
+        "contains": null,
+        "regex": null,
+        "exit_code": 0
+      },
+      "timeout_ms": 120000,
+      "source_refs": [
+        "ref_help_0001"
+      ],
+      "manual_step": false,
+      "manual_reason": null
+    }
+  ],
+  "cleanup": [],
+  "redactions": [],
+  "audio": {
+    "typing": true,
+    "music_path": null
+  },
+  "branding": {
+    "title": "castkit demo",
+    "bg_primary": null,
+    "bg_secondary": null,
+    "text_primary": null,
+    "text_muted": null,
+    "command_text": null,
+    "accent": null,
+    "watermark_text": "castkit.com",
+    "avatar_x": null,
+    "avatar_url": null,
+    "avatar_label": null
+  }
+}

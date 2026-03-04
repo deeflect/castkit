@@ -12,12 +12,13 @@ use tempfile::TempDir;
 
 use crate::branding::BrandingConfig;
 use crate::cli::{
-    ExecuteArgs, ExecutePreset as CliExecutePreset, KeystrokeProfile as CliKeystrokeProfile,
-    OutputFormat as CliOutputFormat, RenderSpeed as CliRenderSpeed, ThemePreset,
+    EncoderMode as CliEncoderMode, ExecuteArgs, ExecutePreset as CliExecutePreset,
+    KeystrokeProfile as CliKeystrokeProfile, OutputFormat as CliOutputFormat,
+    RenderSpeed as CliRenderSpeed, ThemePreset,
 };
 use crate::render::{
-    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderOptions, RenderOutputFormat,
-    RenderSpeedPreset,
+    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderEncoderMode, RenderOptions,
+    RenderOutputFormat, RenderSpeedPreset,
 };
 use crate::script::{DemoScript, ExpectCondition, ScriptStep};
 use crate::validate::{validate_script, ValidationError, ValidationResult};
@@ -205,6 +206,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         music_path,
         branding: merged_branding,
         speed: map_render_speed(tuning.speed),
+        encoder_mode: map_encoder_mode(args.encoder),
         keystroke_profile: map_keystroke_profile(tuning.keystroke_profile),
         avatar_cache_dir: args.avatar_cache_dir.clone(),
         verbose: is_verbose(),
@@ -441,6 +443,14 @@ fn map_render_speed(speed: CliRenderSpeed) -> RenderSpeedPreset {
     }
 }
 
+fn map_encoder_mode(mode: CliEncoderMode) -> RenderEncoderMode {
+    match mode {
+        CliEncoderMode::Auto => RenderEncoderMode::Auto,
+        CliEncoderMode::Software => RenderEncoderMode::Software,
+        CliEncoderMode::Hardware => RenderEncoderMode::Hardware,
+    }
+}
+
 fn map_output_format(format: CliOutputFormat) -> RenderOutputFormat {
     match format {
         CliOutputFormat::Mp4 => RenderOutputFormat::Mp4,
@@ -538,10 +548,15 @@ impl From<ValidationError> for ExecutionFailure {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_output_format, merge_branding, resolve_render_tuning, BrandingOverrides};
+    use super::{
+        map_encoder_mode, map_output_format, merge_branding, resolve_render_tuning,
+        BrandingOverrides,
+    };
     use crate::branding::BrandingConfig;
-    use crate::cli::{ExecutePreset, KeystrokeProfile, OutputFormat, RenderSpeed, ThemePreset};
-    use crate::render::RenderOutputFormat;
+    use crate::cli::{
+        EncoderMode, ExecutePreset, KeystrokeProfile, OutputFormat, RenderSpeed, ThemePreset,
+    };
+    use crate::render::{RenderEncoderMode, RenderOutputFormat};
 
     #[test]
     fn merge_branding_prefers_file_and_cli_title() {
@@ -617,6 +632,22 @@ mod tests {
         assert!(matches!(
             map_output_format(OutputFormat::Webm),
             RenderOutputFormat::Webm
+        ));
+    }
+
+    #[test]
+    fn maps_encoder_mode() {
+        assert!(matches!(
+            map_encoder_mode(EncoderMode::Auto),
+            RenderEncoderMode::Auto
+        ));
+        assert!(matches!(
+            map_encoder_mode(EncoderMode::Software),
+            RenderEncoderMode::Software
+        ));
+        assert!(matches!(
+            map_encoder_mode(EncoderMode::Hardware),
+            RenderEncoderMode::Hardware
         ));
     }
 }

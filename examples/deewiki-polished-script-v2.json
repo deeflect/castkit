@@ -1,0 +1,86 @@
+{
+  "version": "1",
+  "setup": [],
+  "scenes": [
+    {
+      "id": "scene_01",
+      "title": "CLI Overview",
+      "steps": [
+        {
+          "id": "step_help",
+          "run": "dee-wiki --help",
+          "expect": { "contains": "Usage:", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_02",
+      "title": "Search Wikipedia",
+      "steps": [
+        {
+          "id": "step_search",
+          "run": "dee-wiki search \"rust programming\" --limit 5 --json",
+          "expect": { "contains": "\"ok\":true", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_03",
+      "title": "Concise Summary",
+      "steps": [
+        {
+          "id": "step_summary",
+          "run": "dee-wiki summary \"Rust (programming language)\" --json",
+          "expect": { "contains": "\"extract\"", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_04",
+      "title": "Full Payload",
+      "steps": [
+        {
+          "id": "step_get",
+          "run": "dee-wiki get \"Rust (programming language)\" --json",
+          "expect": { "contains": "\"thumbnail\"", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "check_version",
+      "run": "dee-wiki --version",
+      "expect": { "contains": null, "regex": null, "exit_code": 0 },
+      "timeout_ms": 120000,
+      "source_refs": ["ref_help_0001"],
+      "manual_step": false,
+      "manual_reason": null
+    }
+  ],
+  "cleanup": [],
+  "redactions": [],
+  "audio": { "typing": true, "music_path": null },
+  "branding": {
+    "title": "dee-wiki • castkit demo",
+    "watermark_text": "castkit.com",
+    "avatar_x": "deeflect",
+    "avatar_label": "@deeflect"
+  }
+}

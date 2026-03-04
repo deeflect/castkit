@@ -34,6 +34,13 @@ pub enum KeystrokeProfile {
     Silent,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum RenderEncoderMode {
+    Auto,
+    Software,
+    Hardware,
+}
+
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
     pub output_path: PathBuf,
@@ -44,6 +51,7 @@ pub struct RenderOptions {
     pub music_path: Option<PathBuf>,
     pub branding: Option<BrandingConfig>,
     pub speed: RenderSpeedPreset,
+    pub encoder_mode: RenderEncoderMode,
     pub keystroke_profile: KeystrokeProfile,
     pub avatar_cache_dir: Option<PathBuf>,
     pub verbose: bool,
@@ -147,6 +155,7 @@ pub fn render_screenstudio(
         &intermediate_video_path,
         fps,
         opts.speed,
+        opts.encoder_mode,
         opts.avatar_cache_dir.as_deref(),
         opts.verbose,
     )?;
@@ -199,6 +208,7 @@ fn run_playwright_renderer(
     output_path: &Path,
     fps: u32,
     speed: RenderSpeedPreset,
+    encoder_mode: RenderEncoderMode,
     avatar_cache_dir: Option<&Path>,
     verbose: bool,
 ) -> Result<()> {
@@ -224,6 +234,12 @@ fn run_playwright_renderer(
         .arg(match speed {
             RenderSpeedPreset::Fast => "fast",
             RenderSpeedPreset::Quality => "quality",
+        })
+        .arg("--encoder-mode")
+        .arg(match encoder_mode {
+            RenderEncoderMode::Auto => "auto",
+            RenderEncoderMode::Software => "software",
+            RenderEncoderMode::Hardware => "hardware",
         });
     if let Some(dir) = avatar_cache_dir {
         command.arg("--avatar-cache-dir").arg(dir);
@@ -231,7 +247,7 @@ fn run_playwright_renderer(
 
     if verbose {
         eprintln!(
-            "[castkit] renderer: node {} --manifest {} --output {} --fps {} --speed {}",
+            "[castkit] renderer: node {} --manifest {} --output {} --fps {} --speed {} --encoder-mode {}",
             renderer_script.display(),
             manifest_path.display(),
             output_path.display(),
@@ -239,6 +255,11 @@ fn run_playwright_renderer(
             match speed {
                 RenderSpeedPreset::Fast => "fast",
                 RenderSpeedPreset::Quality => "quality",
+            },
+            match encoder_mode {
+                RenderEncoderMode::Auto => "auto",
+                RenderEncoderMode::Software => "software",
+                RenderEncoderMode::Hardware => "hardware",
             }
         );
     }
@@ -258,6 +279,13 @@ fn run_playwright_renderer(
             "renderer completed but output video missing: {}",
             output_path.display()
         );
+    }
+
+    if verbose {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            eprintln!("[castkit] renderer output: {}", stdout.trim());
+        }
     }
 
     Ok(())

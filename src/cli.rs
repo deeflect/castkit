@@ -138,6 +138,13 @@ pub enum ExecutePreset {
     Polished,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum EncoderMode {
+    Auto,
+    Software,
+    Hardware,
+}
+
 #[derive(Debug, Args)]
 pub struct ExecuteArgs {
     #[arg(long)]
@@ -180,6 +187,8 @@ pub struct ExecuteArgs {
     pub speed: Option<RenderSpeed>,
     #[arg(long, value_enum)]
     pub keystroke_profile: Option<KeystrokeProfile>,
+    #[arg(long, value_enum, default_value_t = EncoderMode::Auto)]
+    pub encoder: EncoderMode,
 }
 
 #[cfg(test)]
