@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use castkit::cli::{EncoderMode, ExecuteArgs, KeystrokeProfile, OutputFormat, RenderSpeed};
+use castkit::cli::{ExecuteArgs, KeystrokeProfile, OutputFormat, RenderSpeed};
 use castkit::execute;
 use castkit::handoff::session_store::save_session;
 use castkit::handoff::types::{HandoffSession, RefItem, RefMetadata, SourceSummary};
@@ -73,7 +73,6 @@ async fn execute_requires_non_interactive() {
             theme: None,
             speed: Some(RenderSpeed::Quality),
             keystroke_profile: Some(KeystrokeProfile::Laptop),
-            encoder: EncoderMode::Auto,
         },
         script,
     )

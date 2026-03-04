@@ -3,22 +3,20 @@ pub mod runner;
 pub mod transcript;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
-use tempfile::TempDir;
 
 use crate::branding::BrandingConfig;
 use crate::cli::{
-    EncoderMode as CliEncoderMode, ExecuteArgs, ExecutePreset as CliExecutePreset,
-    KeystrokeProfile as CliKeystrokeProfile, OutputFormat as CliOutputFormat,
-    RenderSpeed as CliRenderSpeed, ThemePreset,
+    ExecuteArgs, ExecutePreset as CliExecutePreset, KeystrokeProfile as CliKeystrokeProfile,
+    OutputFormat as CliOutputFormat, RenderSpeed as CliRenderSpeed, ThemePreset,
 };
 use crate::render::{
-    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderEncoderMode, RenderOptions,
-    RenderOutputFormat, RenderSpeedPreset,
+    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderOptions, RenderOutputFormat,
+    RenderSpeedPreset,
 };
 use crate::script::{DemoScript, ExpectCondition, ScriptStep};
 use crate::validate::{validate_script, ValidationError, ValidationResult};
@@ -147,7 +145,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
     )
     .await;
 
-    let transcript_path = write_transcript(&transcript, &sandbox)?;
+    let transcript_path = write_transcript(&transcript)?;
 
     if !failures.is_empty() {
         return Ok(ExecuteResponse {
@@ -183,7 +181,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
     } else {
         args.typing_sound
     };
-    let file_branding = load_branding(args.branding.as_ref())?;
+    let file_branding = load_branding(args.branding.as_deref())?;
     let merged_branding = merge_branding(
         tuning.theme,
         script.branding.clone(),
@@ -206,7 +204,6 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         music_path,
         branding: merged_branding,
         speed: map_render_speed(tuning.speed),
-        encoder_mode: map_encoder_mode(args.encoder),
         keystroke_profile: map_keystroke_profile(tuning.keystroke_profile),
         avatar_cache_dir: args.avatar_cache_dir.clone(),
         verbose: is_verbose(),
@@ -317,7 +314,7 @@ fn evaluate_expectation(
     None
 }
 
-fn write_transcript(transcript: &ExecutionTranscript, _sandbox: &TempDir) -> Result<PathBuf> {
+fn write_transcript(transcript: &ExecutionTranscript) -> Result<PathBuf> {
     let path = std::env::temp_dir().join(format!(
         "castkit-exec-transcript-{}.json",
         uuid::Uuid::new_v4().simple()
@@ -340,7 +337,7 @@ fn empty_record() -> StepRunRecord {
     }
 }
 
-fn load_branding(path: Option<&PathBuf>) -> Result<Option<BrandingConfig>> {
+fn load_branding(path: Option<&Path>) -> Result<Option<BrandingConfig>> {
     let Some(path) = path else {
         return Ok(None);
     };
@@ -372,33 +369,39 @@ fn merge_branding(
         });
     }
 
-    if let Some(title) = overrides.title {
-        let mut branding = merged.unwrap_or_default();
-        branding.title = Some(title);
-        merged = Some(branding);
-    }
-    if let Some(watermark_text) = overrides.watermark_text {
-        let mut branding = merged.unwrap_or_default();
-        branding.watermark_text = Some(watermark_text);
-        merged = Some(branding);
-    }
-    if let Some(avatar_x) = overrides.avatar_x {
-        let mut branding = merged.unwrap_or_default();
-        branding.avatar_x = Some(avatar_x);
-        merged = Some(branding);
-    }
-    if let Some(avatar_url) = overrides.avatar_url {
-        let mut branding = merged.unwrap_or_default();
-        branding.avatar_url = Some(avatar_url);
-        merged = Some(branding);
-    }
-    if let Some(avatar_label) = overrides.avatar_label {
-        let mut branding = merged.unwrap_or_default();
-        branding.avatar_label = Some(avatar_label);
-        merged = Some(branding);
-    }
+    apply_branding_overrides(&mut merged, overrides);
 
     merged.filter(|b| !b.is_empty())
+}
+
+fn apply_branding_overrides(merged: &mut Option<BrandingConfig>, overrides: BrandingOverrides) {
+    apply_branding_override(merged, overrides.title, |branding, value| {
+        branding.title = Some(value);
+    });
+    apply_branding_override(merged, overrides.watermark_text, |branding, value| {
+        branding.watermark_text = Some(value);
+    });
+    apply_branding_override(merged, overrides.avatar_x, |branding, value| {
+        branding.avatar_x = Some(value);
+    });
+    apply_branding_override(merged, overrides.avatar_url, |branding, value| {
+        branding.avatar_url = Some(value);
+    });
+    apply_branding_override(merged, overrides.avatar_label, |branding, value| {
+        branding.avatar_label = Some(value);
+    });
+}
+
+fn apply_branding_override(
+    merged: &mut Option<BrandingConfig>,
+    value: Option<String>,
+    mut setter: impl FnMut(&mut BrandingConfig, String),
+) {
+    if let Some(value) = value {
+        let mut branding = merged.take().unwrap_or_default();
+        setter(&mut branding, value);
+        *merged = Some(branding);
+    }
 }
 
 fn theme_branding(theme: ThemePreset) -> BrandingConfig {
@@ -440,14 +443,6 @@ fn map_render_speed(speed: CliRenderSpeed) -> RenderSpeedPreset {
     match speed {
         CliRenderSpeed::Fast => RenderSpeedPreset::Fast,
         CliRenderSpeed::Quality => RenderSpeedPreset::Quality,
-    }
-}
-
-fn map_encoder_mode(mode: CliEncoderMode) -> RenderEncoderMode {
-    match mode {
-        CliEncoderMode::Auto => RenderEncoderMode::Auto,
-        CliEncoderMode::Software => RenderEncoderMode::Software,
-        CliEncoderMode::Hardware => RenderEncoderMode::Hardware,
     }
 }
 
@@ -548,15 +543,10 @@ impl From<ValidationError> for ExecutionFailure {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        map_encoder_mode, map_output_format, merge_branding, resolve_render_tuning,
-        BrandingOverrides,
-    };
+    use super::{map_output_format, merge_branding, resolve_render_tuning, BrandingOverrides};
     use crate::branding::BrandingConfig;
-    use crate::cli::{
-        EncoderMode, ExecutePreset, KeystrokeProfile, OutputFormat, RenderSpeed, ThemePreset,
-    };
-    use crate::render::{RenderEncoderMode, RenderOutputFormat};
+    use crate::cli::{ExecutePreset, KeystrokeProfile, OutputFormat, RenderSpeed, ThemePreset};
+    use crate::render::RenderOutputFormat;
 
     #[test]
     fn merge_branding_prefers_file_and_cli_title() {
@@ -632,22 +622,6 @@ mod tests {
         assert!(matches!(
             map_output_format(OutputFormat::Webm),
             RenderOutputFormat::Webm
-        ));
-    }
-
-    #[test]
-    fn maps_encoder_mode() {
-        assert!(matches!(
-            map_encoder_mode(EncoderMode::Auto),
-            RenderEncoderMode::Auto
-        ));
-        assert!(matches!(
-            map_encoder_mode(EncoderMode::Software),
-            RenderEncoderMode::Software
-        ));
-        assert!(matches!(
-            map_encoder_mode(EncoderMode::Hardware),
-            RenderEncoderMode::Hardware
         ));
     }
 }

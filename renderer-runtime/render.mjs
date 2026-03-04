@@ -3,9 +3,17 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import Convert from 'ansi-to-html';
+
+function nowMs() {
+  return Number(process.hrtime.bigint()) / 1e6;
+}
+
+function roundMs(value) {
+  return Math.round(value * 100) / 100;
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -84,71 +92,6 @@ async function resolveAvatarWithCache(branding, cacheDir) {
   return branding;
 }
 
-function normalizedEncoderMode(modeRaw) {
-  const mode = String(modeRaw || 'auto').toLowerCase();
-  if (mode === 'software' || mode === 'hardware' || mode === 'auto') return mode;
-  return 'auto';
-}
-
-function listEncodersText() {
-  const probe = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], {
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024
-  });
-  return `${probe.stdout || ''}\n${probe.stderr || ''}`;
-}
-
-function hasEncoder(encodersText, codec) {
-  return new RegExp(`\\b${codec}\\b`).test(encodersText);
-}
-
-function codecUsable(codec) {
-  const probe = spawnSync(
-    'ffmpeg',
-    [
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-f',
-      'lavfi',
-      '-i',
-      'color=c=black:s=64x64:d=0.10',
-      '-frames:v',
-      '1',
-      '-c:v',
-      codec,
-      '-f',
-      'null',
-      '-'
-    ],
-    { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }
-  );
-  return probe.status === 0;
-}
-
-function hardwareCandidates() {
-  if (process.platform === 'darwin') return ['h264_videotoolbox'];
-  if (process.platform === 'win32') return ['h264_nvenc', 'h264_qsv', 'h264_amf'];
-  return ['h264_nvenc', 'h264_qsv'];
-}
-
-function resolveVideoEncoder(modeRaw) {
-  const mode = normalizedEncoderMode(modeRaw);
-  if (mode === 'software') return { codec: 'libx264', modeUsed: 'software' };
-
-  const encoders = listEncodersText();
-  for (const codec of hardwareCandidates()) {
-    if (!hasEncoder(encoders, codec)) continue;
-    if (!codecUsable(codec)) continue;
-    return { codec, modeUsed: 'hardware' };
-  }
-
-  if (mode === 'hardware') {
-    throw new Error('hardware encoder requested but no supported hardware codec is available');
-  }
-  return { codec: 'libx264', modeUsed: 'software' };
-}
-
 function softwareEncodeArgs({ fastMode, balancedQuality }) {
   const vf = fastMode
     ? 'format=yuv420p'
@@ -173,34 +116,43 @@ function softwareEncodeArgs({ fastMode, balancedQuality }) {
   ];
 }
 
-function hardwareEncodeArgs({ codec, fastMode, balancedQuality }) {
-  const targetBitrate = fastMode ? '6M' : balancedQuality ? '10M' : '14M';
-  const maxRate = fastMode ? '9M' : balancedQuality ? '14M' : '18M';
-  const bufSize = fastMode ? '12M' : balancedQuality ? '20M' : '24M';
-  return [
-    '-vf',
-    'scale=1920:1080:flags=bicubic,format=yuv420p',
-    '-c:v',
-    codec,
-    '-b:v',
-    targetBitrate,
-    '-maxrate',
-    maxRate,
-    '-bufsize',
-    bufSize,
-    '-pix_fmt',
-    'yuv420p'
-  ];
+function num(value) {
+  return Number.isFinite(value) ? value : 0;
 }
 
-async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath, encoderMode }) {
+function shouldCaptureFrame(previousState, nextState, reusedStreak) {
+  if (!nextState || typeof nextState !== 'object') return true;
+  if (!previousState || typeof previousState !== 'object') return true;
+
+  if (nextState.phase === 'typing') return true;
+  if (reusedStreak >= 1) return true;
+  if (nextState.idx !== previousState.idx) return true;
+  if (nextState.top_row !== previousState.top_row) return true;
+  if (nextState.cursor_visible !== previousState.cursor_visible) return true;
+
+  if (Math.abs(num(nextState.camera_x) - num(previousState.camera_x)) >= 0.42) return true;
+  if (Math.abs(num(nextState.camera_y) - num(previousState.camera_y)) >= 0.42) return true;
+  if (Math.abs(num(nextState.zoom) - num(previousState.zoom)) >= 0.0016) return true;
+  if (Math.abs(num(nextState.terminal_y) - num(previousState.terminal_y)) >= 0.40) return true;
+  if (Math.abs(num(nextState.scene_opacity) - num(previousState.scene_opacity)) >= 0.05) return true;
+  if (Math.abs(num(nextState.intro_opacity) - num(previousState.intro_opacity)) >= 0.05) return true;
+
+  if (nextState.cursor_visible) {
+    if (Math.abs(num(nextState.cursor_x) - num(previousState.cursor_x)) >= 0.75) return true;
+    if (Math.abs(num(nextState.cursor_y) - num(previousState.cursor_y)) >= 0.75) return true;
+    if (Math.abs(num(nextState.cursor_opacity) - num(previousState.cursor_opacity)) >= 0.10) return true;
+  }
+
+  return false;
+}
+
+async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath }) {
+  const encodeStartMs = nowMs();
   const fastMode = speed === 'fast';
   const balancedQuality = !fastMode && fps <= 45;
   const frameCount = Math.max(1, Math.ceil((manifest.duration_ms / 1000) * fps));
-  const encoder = resolveVideoEncoder(encoderMode);
-  const codecArgs = encoder.modeUsed === 'hardware'
-    ? hardwareEncodeArgs({ codec: encoder.codec, fastMode, balancedQuality })
-    : softwareEncodeArgs({ fastMode, balancedQuality });
+  const pipeInputCodec = fastMode ? 'mjpeg' : 'png';
+  const codecArgs = softwareEncodeArgs({ fastMode, balancedQuality });
   const ffmpegArgs = [
     '-y',
     '-hide_banner',
@@ -209,7 +161,7 @@ async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath, enc
     '-f',
     'image2pipe',
     '-vcodec',
-    fastMode ? 'mjpeg' : 'png',
+    pipeInputCodec,
     '-framerate',
     String(fps),
     '-i',
@@ -228,27 +180,71 @@ async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath, enc
     ffmpegErr += chunk.toString();
   });
 
+  let evaluateMs = 0;
+  let screenshotMs = 0;
+  let pipeWaitMs = 0;
+  let capturedFrames = 0;
+  let reusedFrames = 0;
+  let lastRenderState = null;
+  let lastFrameBuffer = null;
+  let reusedStreak = 0;
+  const screenshotOpts = pipeInputCodec === 'mjpeg'
+    ? { type: 'jpeg', quality: 92 }
+    : { type: 'png' };
+
   for (let i = 0; i < frameCount; i += 1) {
     const tMs = Math.min(manifest.duration_ms, Math.round((i * 1000) / fps));
-    await page.evaluate((timeMs) => {
-      window.__renderAt(timeMs);
-    }, tMs);
+    const evaluateStartMs = nowMs();
+    const renderStateRaw = await page.evaluate((timeMs) => window.__renderAt(timeMs), tMs);
+    evaluateMs += nowMs() - evaluateStartMs;
+    const renderState = renderStateRaw && typeof renderStateRaw === 'object'
+      ? renderStateRaw
+      : null;
+    const captureFrame = shouldCaptureFrame(lastRenderState, renderState, reusedStreak);
 
-    const screenshotOpts = fastMode
-      ? { type: 'jpeg', quality: 92 }
-      : { type: 'png' };
-    const frameBuffer = await page.screenshot(screenshotOpts);
+    let frameBuffer = null;
+    if (!captureFrame && lastFrameBuffer) {
+      reusedFrames += 1;
+      reusedStreak += 1;
+      frameBuffer = lastFrameBuffer;
+    } else {
+      const screenshotStartMs = nowMs();
+      frameBuffer = await page.screenshot(screenshotOpts);
+      screenshotMs += nowMs() - screenshotStartMs;
+      capturedFrames += 1;
+      reusedStreak = 0;
+      lastFrameBuffer = frameBuffer;
+    }
+    lastRenderState = renderState;
+
+    const pipeStartMs = nowMs();
     if (!ffmpeg.stdin.write(frameBuffer)) {
       await once(ffmpeg.stdin, 'drain');
     }
+    pipeWaitMs += nowMs() - pipeStartMs;
   }
 
+  const closeStartMs = nowMs();
   ffmpeg.stdin.end();
   const [code] = await once(ffmpeg, 'close');
+  const ffmpegCloseMs = nowMs() - closeStartMs;
   if (code !== 0) {
     throw new Error(`ffmpeg encode failed (${code}): ${ffmpegErr.trim()}`);
   }
-  return { frameCount, videoEncoder: encoder.codec, encoderModeUsed: encoder.modeUsed };
+  return {
+    frameCount,
+    videoEncoder: 'libx264',
+    captureInputCodec: pipeInputCodec,
+    capturedFrames,
+    reusedFrames,
+    timing: {
+      encodeMs: roundMs(nowMs() - encodeStartMs),
+      evaluateMs: roundMs(evaluateMs),
+      screenshotMs: roundMs(screenshotMs),
+      pipeWaitMs: roundMs(pipeWaitMs),
+      ffmpegCloseMs: roundMs(ffmpegCloseMs)
+    }
+  };
 }
 
 async function main() {
@@ -262,7 +258,6 @@ async function main() {
   const outputPath = path.resolve(args.output);
   const fps = Math.max(24, Number(args.fps ?? 60));
   const speed = String(args.speed ?? 'quality').toLowerCase() === 'fast' ? 'fast' : 'quality';
-  const encoderMode = normalizedEncoderMode(args['encoder-mode']);
   const avatarCacheDir = args['avatar-cache-dir'] ? path.resolve(args['avatar-cache-dir']) : null;
 
   const rawManifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
@@ -283,7 +278,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true });
   const viewport = speed === 'fast'
     ? { width: 1920, height: 1080 }
-    : { width: 2560, height: 1440 };
+    : { width: 2304, height: 1296 };
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: 1
@@ -710,14 +705,23 @@ async function main() {
         this.lastTopRow = topRow;
       }
 
-      terminal.style.transform = 'translate3d(0,' + (-topRowFrac * lineHeight).toFixed(2) + 'px,0)';
+      const terminalTransform = 'translate3d(0,' + (-topRowFrac * lineHeight).toFixed(2) + 'px,0)';
+      terminal.style.transform = terminalTransform;
 
       const localRow = activeRowF - this.scrollTop;
+      let cursorVisible = false;
+      let cursorOpacity = '0';
+      let cursorTransform = '';
+      let cursorBlink = 0;
       if (s.phase === 'typing' && localRow >= 0 && localRow < maxRows) {
+        cursorVisible = true;
         cursor.style.display = 'block';
         const blink = Math.floor(tMs / 280) % 2 === 0 ? 0.90 : 0.12;
-        cursor.style.opacity = String(blink);
-        cursor.style.transform = 'translate(' + (cursorColF * 10.5) + 'px, ' + ((localRow * lineHeight) + 2) + 'px)';
+        cursorBlink = blink;
+        cursorOpacity = String(blink);
+        cursor.style.opacity = cursorOpacity;
+        cursorTransform = 'translate(' + (cursorColF * 10.5) + 'px, ' + ((localRow * lineHeight) + 2) + 'px)';
+        cursor.style.transform = cursorTransform;
       } else {
         cursor.style.display = 'none';
       }
@@ -745,10 +749,28 @@ async function main() {
       const cameraYDelta = (targetCameraYFinal - this.cameraY) * 0.06;
       this.cameraY += Math.max(-1.9, Math.min(1.9, cameraYDelta));
 
-      camera.style.transform = 'translate3d(' + this.cameraX.toFixed(2) + 'px, ' + this.cameraY.toFixed(2) + 'px, 0) scale(' + this.zoom.toFixed(4) + ')';
+      const cameraTransform = 'translate3d(' + this.cameraX.toFixed(2) + 'px, ' + this.cameraY.toFixed(2) + 'px, 0) scale(' + this.zoom.toFixed(4) + ')';
+      camera.style.transform = cameraTransform;
 
       const intro = Math.max(0, 1 - (tMs / 280));
-      veil.style.opacity = String(intro);
+      const introOpacity = intro.toFixed(3);
+      veil.style.opacity = introOpacity;
+
+      return {
+        idx: this.idx,
+        phase: s.phase || 'idle',
+        top_row: topRow,
+        terminal_y: -topRowFrac * lineHeight,
+        cursor_visible: cursorVisible,
+        cursor_x: cursorVisible ? (cursorColF * 10.5) : 0,
+        cursor_y: cursorVisible ? ((localRow * lineHeight) + 2) : 0,
+        cursor_opacity: cursorVisible ? cursorBlink : 0,
+        camera_x: this.cameraX,
+        camera_y: this.cameraY,
+        zoom: this.zoom,
+        intro_opacity: Number(introOpacity),
+        scene_opacity: Number(sceneTag.style.opacity || 0)
+      };
     }
   };
 
@@ -772,19 +794,31 @@ async function main() {
 
   let frameCount = 0;
   let videoEncoder = 'libx264';
-  let encoderModeUsed = 'software';
+  let captureInputCodec = 'png';
+  let capturedFrames = 0;
+  let reusedFrames = 0;
+  let encodeTiming = {
+    encodeMs: 0,
+    evaluateMs: 0,
+    screenshotMs: 0,
+    pipeWaitMs: 0,
+    ffmpegCloseMs: 0
+  };
+  const totalStartMs = nowMs();
   try {
     const encodeResult = await encodeFramesViaPipe({
       page,
       manifest,
       fps,
       speed,
-      outputPath,
-      encoderMode
+      outputPath
     });
     frameCount = encodeResult.frameCount;
     videoEncoder = encodeResult.videoEncoder;
-    encoderModeUsed = encodeResult.encoderModeUsed;
+    captureInputCodec = encodeResult.captureInputCodec;
+    capturedFrames = encodeResult.capturedFrames;
+    reusedFrames = encodeResult.reusedFrames;
+    encodeTiming = encodeResult.timing;
   } finally {
     await browser.close();
   }
@@ -795,9 +829,17 @@ async function main() {
     fps,
     frames: frameCount,
     speed,
-    encoder_requested: encoderMode,
-    encoder_mode_used: encoderModeUsed,
-    video_encoder: videoEncoder
+    video_encoder: videoEncoder,
+    capture: {
+      viewport,
+      input_codec: captureInputCodec,
+      captured_frames: capturedFrames,
+      reused_frames: reusedFrames
+    },
+    timing_ms: {
+      totalMs: roundMs(nowMs() - totalStartMs),
+      ...encodeTiming
+    }
   }) + '\n');
 }
 

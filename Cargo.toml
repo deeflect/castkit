@@ -14,7 +14,6 @@ exclude = [
   ".castkit/**",
   "examples/*.mp4",
   "renderer-runtime/node_modules/**",
-  "renderer/node_modules/**",
   "docs/plans/**",
   ".DS_Store",
 ]

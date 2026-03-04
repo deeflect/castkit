@@ -51,7 +51,6 @@ Explicit flags still override preset defaults:
 - `--speed fast|quality`
 - `--theme clean|bold|minimal`
 - `--keystroke-profile mechanical|laptop|silent`
-- `--encoder auto|software|hardware`
 
 ## Branding
 Branding sources are merged in this order:
@@ -86,12 +85,11 @@ Ready palette files: `examples/branding-clean.json`, `examples/branding-bold.jso
 - `--no-zoom` locks camera framing (no pan/zoom motion).
 - Typing sound + music are optional.
 - Output formats: `mp4` (default), `webm`, `gif` via `--format`.
-- Encoder mode: `--encoder auto` (default, cross-platform fallback), `software`, or `hardware`.
+- Video encoding uses software `libx264` for stable quality.
 
 ## Renderer runtime override
-Default discovery order:
+Default discovery:
 1. `./renderer-runtime`
-2. `./renderer`
 
 Override:
 ```bash

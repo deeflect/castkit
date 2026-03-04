@@ -34,13 +34,6 @@ pub enum KeystrokeProfile {
     Silent,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum RenderEncoderMode {
-    Auto,
-    Software,
-    Hardware,
-}
-
 #[derive(Debug, Clone)]
 pub struct RenderOptions {
     pub output_path: PathBuf,
@@ -51,7 +44,6 @@ pub struct RenderOptions {
     pub music_path: Option<PathBuf>,
     pub branding: Option<BrandingConfig>,
     pub speed: RenderSpeedPreset,
-    pub encoder_mode: RenderEncoderMode,
     pub keystroke_profile: KeystrokeProfile,
     pub avatar_cache_dir: Option<PathBuf>,
     pub verbose: bool,
@@ -155,7 +147,6 @@ pub fn render_screenstudio(
         &intermediate_video_path,
         fps,
         opts.speed,
-        opts.encoder_mode,
         opts.avatar_cache_dir.as_deref(),
         opts.verbose,
     )?;
@@ -208,7 +199,6 @@ fn run_playwright_renderer(
     output_path: &Path,
     fps: u32,
     speed: RenderSpeedPreset,
-    encoder_mode: RenderEncoderMode,
     avatar_cache_dir: Option<&Path>,
     verbose: bool,
 ) -> Result<()> {
@@ -221,6 +211,7 @@ fn run_playwright_renderer(
         );
     }
 
+    let speed_arg = render_speed_arg(speed);
     let mut command = Command::new("node");
     command
         .arg(&renderer_script)
@@ -231,36 +222,19 @@ fn run_playwright_renderer(
         .arg("--fps")
         .arg(fps.to_string())
         .arg("--speed")
-        .arg(match speed {
-            RenderSpeedPreset::Fast => "fast",
-            RenderSpeedPreset::Quality => "quality",
-        })
-        .arg("--encoder-mode")
-        .arg(match encoder_mode {
-            RenderEncoderMode::Auto => "auto",
-            RenderEncoderMode::Software => "software",
-            RenderEncoderMode::Hardware => "hardware",
-        });
+        .arg(speed_arg);
     if let Some(dir) = avatar_cache_dir {
         command.arg("--avatar-cache-dir").arg(dir);
     }
 
     if verbose {
         eprintln!(
-            "[castkit] renderer: node {} --manifest {} --output {} --fps {} --speed {} --encoder-mode {}",
+            "[castkit] renderer: node {} --manifest {} --output {} --fps {} --speed {}",
             renderer_script.display(),
             manifest_path.display(),
             output_path.display(),
             fps,
-            match speed {
-                RenderSpeedPreset::Fast => "fast",
-                RenderSpeedPreset::Quality => "quality",
-            },
-            match encoder_mode {
-                RenderEncoderMode::Auto => "auto",
-                RenderEncoderMode::Software => "software",
-                RenderEncoderMode::Hardware => "hardware",
-            }
+            speed_arg
         );
     }
 
@@ -296,17 +270,19 @@ fn resolve_renderer_home() -> Result<PathBuf> {
         return Ok(PathBuf::from(home));
     }
 
-    let cwd = std::env::current_dir()?;
-    for rel in ["renderer-runtime", "renderer"] {
-        let candidate = cwd.join(rel);
-        if candidate.join("render.mjs").exists() {
-            return Ok(candidate);
-        }
+    let candidate = std::env::current_dir()?.join("renderer-runtime");
+    if candidate.join("render.mjs").exists() {
+        return Ok(candidate);
     }
 
-    anyhow::bail!(
-        "no renderer home found; expected ./renderer-runtime or ./renderer with render.mjs"
-    )
+    anyhow::bail!("no renderer home found; expected ./renderer-runtime with render.mjs")
+}
+
+fn render_speed_arg(speed: RenderSpeedPreset) -> &'static str {
+    match speed {
+        RenderSpeedPreset::Fast => "fast",
+        RenderSpeedPreset::Quality => "quality",
+    }
 }
 
 fn mux_to_final_output(
