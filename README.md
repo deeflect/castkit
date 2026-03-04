@@ -9,6 +9,8 @@ Agent-native CLI demo video generator for terminal tools, with ScreenStudio-styl
 - Polished terminal video output (typed commands, streamed output, auto camera, branding, avatar, watermark, optional audio).
 
 See agent contract: `AGENTS.md`.
+For scenario-writing quality rules (what to show, pacing, checks), see `AGENTS.md` sections
+`Scenario Design Playbook` and `Pre-Execute Quality Gate`.
 
 ## Install requirements
 - Rust 1.75+
