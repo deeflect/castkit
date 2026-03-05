@@ -2,6 +2,7 @@ pub mod artifacts;
 pub mod redact;
 pub mod runner;
 pub mod transcript;
+pub mod web_runner;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -22,13 +23,14 @@ use crate::render::{
     render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderOptions, RenderOutputFormat,
     RenderSpeedPreset,
 };
-use crate::script::{DemoScript, ExpectCondition, ScriptStep};
+use crate::script::{DemoMode, DemoScript, ExpectCondition, ScriptStep};
 use crate::validate::{validate_script, ValidationError, ValidationResult};
 
+use self::artifacts::capture_artifacts;
 use self::redact::Redactor;
 use self::runner::run_step;
 use self::transcript::{ExecutionTranscript, OverlayEvent, SceneTranscript, StepRunRecord};
-use self::artifacts::capture_artifacts;
+use self::web_runner::run_web_actions;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ExecuteResponse {
@@ -128,6 +130,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         scenes: Vec::new(),
         cleanup: Vec::new(),
         overlay_events: Vec::new(),
+        web_actions: Vec::new(),
     };
     let mut runtime_env = RuntimeEnv::with_session(&args.session);
     let mut timeline_ms = 0u64;
@@ -147,6 +150,58 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
     )
     .await;
 
+    match script.mode {
+        DemoMode::Terminal => {
+            for (scene_idx, scene) in script.scenes.iter().enumerate() {
+                let mut scene_transcript = SceneTranscript {
+                    id: scene.id.clone(),
+                    title: scene.title.clone(),
+                    steps: Vec::new(),
+                };
+
+                execute_group(
+                    sandbox.path(),
+                    &scene.steps,
+                    &format!("scenes[{scene_idx}].steps"),
+                    &mut runtime_env,
+                    &mut scene_transcript.steps,
+                    &mut transcript.overlay_events,
+                    &mut timeline_ms,
+                    &mut failures,
+                    &redactor,
+                )
+                .await;
+
+                transcript.scenes.push(scene_transcript);
+            }
+        }
+        DemoMode::Web => {
+            if failures.is_empty() {
+                match script.web.as_ref() {
+                    Some(web) => match run_web_actions(sandbox.path(), web).await {
+                        Ok(actions) => {
+                            if let Some(last) = actions.last() {
+                                timeline_ms =
+                                    timeline_ms.max(last.t_ms.saturating_add(last.duration_ms));
+                            }
+                            transcript.web_actions = actions;
+                        }
+                        Err(err) => failures.push(ExecutionFailure {
+                            step_path: "web.actions".to_string(),
+                            reason: redactor.redact_text(&err.to_string()),
+                            record: empty_record(),
+                        }),
+                    },
+                    None => failures.push(ExecutionFailure {
+                        step_path: "web".to_string(),
+                        reason: "mode='web' requires web config".to_string(),
+                        record: empty_record(),
+                    }),
+                }
+            }
+        }
+    }
+
     execute_group(
         sandbox.path(),
         &script.checks,
@@ -159,29 +214,6 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         &redactor,
     )
     .await;
-
-    for (scene_idx, scene) in script.scenes.iter().enumerate() {
-        let mut scene_transcript = SceneTranscript {
-            id: scene.id.clone(),
-            title: scene.title.clone(),
-            steps: Vec::new(),
-        };
-
-        execute_group(
-            sandbox.path(),
-            &scene.steps,
-            &format!("scenes[{scene_idx}].steps"),
-            &mut runtime_env,
-            &mut scene_transcript.steps,
-            &mut transcript.overlay_events,
-            &mut timeline_ms,
-            &mut failures,
-            &redactor,
-        )
-        .await;
-
-        transcript.scenes.push(scene_transcript);
-    }
 
     execute_group(
         sandbox.path(),
@@ -203,6 +235,21 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
             ok: false,
             session_id: args.session,
             output: None,
+            transcript_path: Some(transcript_path),
+            validation: Some(validation),
+            failures,
+            render: None,
+        });
+    }
+
+    if std::env::var("CASTKIT_SKIP_RENDER")
+        .ok()
+        .is_some_and(|v| v == "1")
+    {
+        return Ok(ExecuteResponse {
+            ok: true,
+            session_id: args.session,
+            output: Some(args.output),
             transcript_path: Some(transcript_path),
             validation: Some(validation),
             failures,

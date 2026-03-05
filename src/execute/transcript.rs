@@ -14,6 +14,8 @@ pub struct ExecutionTranscript {
     pub cleanup: Vec<StepRunRecord>,
     #[serde(default)]
     pub overlay_events: Vec<OverlayEvent>,
+    #[serde(default)]
+    pub web_actions: Vec<WebActionRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,4 +62,22 @@ pub struct OverlayEvent {
     pub position: ArtifactPosition,
     pub show_ms: u64,
     pub enter: ArtifactEnter,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebActionRecord {
+    pub id: String,
+    pub action_type: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub t_ms: u64,
+    pub duration_ms: u64,
+    pub selector: Option<String>,
+    pub cursor_x: Option<f32>,
+    pub cursor_y: Option<f32>,
+    pub target_x: Option<f32>,
+    pub target_y: Option<f32>,
+    pub target_w: Option<f32>,
+    pub target_h: Option<f32>,
+    pub screenshot_path: Option<String>,
 }

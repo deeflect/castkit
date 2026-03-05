@@ -1033,6 +1033,7 @@ mod tests {
             cleanup: vec![],
             scenes: vec![],
             overlay_events: vec![],
+            web_actions: vec![],
         };
         let (snapshots, _, _, duration) = build_timeline(&transcript);
         assert!(!snapshots.is_empty());
