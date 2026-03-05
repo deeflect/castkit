@@ -20,8 +20,8 @@ use crate::cli::{
     OutputFormat as CliOutputFormat, RenderSpeed as CliRenderSpeed, ThemePreset,
 };
 use crate::render::{
-    render_screenstudio, KeystrokeProfile, RenderArtifacts, RenderOptions, RenderOutputFormat,
-    RenderSpeedPreset,
+    render_screenstudio, render_webstudio, KeystrokeProfile, RenderArtifacts, RenderOptions,
+    RenderOutputFormat, RenderSpeedPreset,
 };
 use crate::script::{DemoMode, DemoScript, ExpectCondition, ScriptStep};
 use crate::validate::{validate_script, ValidationError, ValidationResult};
@@ -306,7 +306,10 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         avatar_cache_dir: args.avatar_cache_dir.clone(),
         verbose: is_verbose(),
     };
-    let render_artifacts = render_screenstudio(&transcript, render_opts)?;
+    let render_artifacts = match script.mode {
+        DemoMode::Terminal => render_screenstudio(&transcript, render_opts)?,
+        DemoMode::Web => render_webstudio(&transcript, render_opts)?,
+    };
 
     Ok(ExecuteResponse {
         ok: true,
