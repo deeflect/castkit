@@ -11,6 +11,7 @@ Produce a polished terminal demo video from evidence-backed steps, with no inven
 - Validate before execute. If validation fails, fix the script and re-validate.
 - Prefer `manual_step=true` only when no runnable command exists in evidence.
 - Keep output deterministic: non-interactive only (`--non-interactive`).
+- Treat bootstrap contract/schema commands as planning context, not main demo scenes.
 
 ## Bootstrap First (required)
 Do this before generating or validating any script:
@@ -58,6 +59,14 @@ Human-readable contract:
 ```bash
 castkit agent contract
 ```
+
+## Runtime Variables During Execute
+These are injected automatically for every step:
+- `SESSION`
+- `CASTKIT_SESSION`
+
+Both start as the value passed to `castkit execute --session <id>`.
+If a step prints JSON containing `"session_id"`, castkit updates both variables for subsequent steps.
 
 ## Agent Output Contract (for script generation)
 Return script as raw JSON only (no markdown), strictly matching the schema below.
@@ -146,6 +155,7 @@ Recommended scene count:
 
 Avoid:
 - Long `--help` dumps as the main content.
+- Full `castkit --json agent contract` or `castkit --json schema` dumps inside showcase scenes.
 - Repetitive commands with low information value.
 - Setup-heavy intros with no visible payoff.
 

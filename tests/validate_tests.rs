@@ -146,3 +146,55 @@ fn validate_fails_when_config_used_without_setup_creation() {
     assert!(!res.ok);
     assert!(res.errors.iter().any(|e| e.code == "ORDERING_CONFIG"));
 }
+
+#[test]
+fn validate_allows_subshell_assignment_without_unknown_command() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "setup":[],
+      "scenes":[{"id":"s1","title":"t","steps":[{"id":"a","run":"SESSION=$(ls .castkit/sessions/*.json | tail -n1)","expect":null,"timeout_ms":1000,"source_refs":["ref_help_0001"]}]}],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(
+        !res.errors.iter().any(|e| e.code == "UNKNOWN_COMMAND"),
+        "errors: {:?}",
+        res.errors
+    );
+}
+
+#[test]
+fn validate_allows_env_prefix_before_known_command() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "setup":[],
+      "scenes":[{"id":"s1","title":"t","steps":[{"id":"a","run":"FOO=bar mycli run","expect":null,"timeout_ms":1000,"source_refs":["ref_help_0001"]}]}],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(
+        !res.errors.iter().any(|e| e.code == "UNKNOWN_COMMAND"),
+        "errors: {:?}",
+        res.errors
+    );
+}

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Instant;
 
@@ -8,7 +9,11 @@ use tokio::time::{timeout, Duration};
 use crate::execute::transcript::StepRunRecord;
 use crate::script::ScriptStep;
 
-pub async fn run_step(cwd: &Path, step: &ScriptStep) -> Result<StepRunRecord> {
+pub async fn run_step(
+    cwd: &Path,
+    step: &ScriptStep,
+    env_vars: &BTreeMap<String, String>,
+) -> Result<StepRunRecord> {
     let timeout_ms = step.timeout_ms.unwrap_or(15_000).max(100);
     let duration = Duration::from_millis(timeout_ms);
     let started = Instant::now();
@@ -17,6 +22,7 @@ pub async fn run_step(cwd: &Path, step: &ScriptStep) -> Result<StepRunRecord> {
     cmd.arg("-lc")
         .arg(&step.run)
         .current_dir(cwd)
+        .envs(env_vars)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
@@ -55,4 +61,32 @@ pub async fn run_step(cwd: &Path, step: &ScriptStep) -> Result<StepRunRecord> {
         },
         error: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::run_step;
+    use crate::script::ScriptStep;
+
+    #[tokio::test]
+    async fn run_step_receives_env_vars() {
+        let cwd = tempfile::tempdir().expect("tempdir");
+        let step = ScriptStep {
+            id: "s1".to_string(),
+            run: "printf '%s' \"$SESSION\"".to_string(),
+            expect: None,
+            timeout_ms: Some(2_000),
+            source_refs: vec!["ref_help_0001".to_string()],
+            manual_step: false,
+            manual_reason: None,
+        };
+        let mut env_vars = BTreeMap::new();
+        env_vars.insert("SESSION".to_string(), "sess_env_test".to_string());
+
+        let record = run_step(cwd.path(), &step, &env_vars).await.expect("run");
+        assert_eq!(record.status, "ok");
+        assert_eq!(record.stdout, "sess_env_test");
+    }
 }

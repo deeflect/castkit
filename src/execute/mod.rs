@@ -2,11 +2,14 @@ pub mod redact;
 pub mod runner;
 pub mod transcript;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use chrono::Utc;
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::Serialize;
 
 use crate::branding::BrandingConfig;
@@ -52,6 +55,36 @@ struct BrandingOverrides {
     avatar_label: Option<String>,
 }
 
+static SESSION_ID_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r#""session_id"\s*:\s*"([^"]+)""#).expect("valid regex"));
+
+#[derive(Debug, Default, Clone)]
+struct RuntimeEnv {
+    vars: BTreeMap<String, String>,
+}
+
+impl RuntimeEnv {
+    fn with_session(session_id: &str) -> Self {
+        let mut vars = BTreeMap::new();
+        vars.insert("SESSION".to_string(), session_id.to_string());
+        vars.insert("CASTKIT_SESSION".to_string(), session_id.to_string());
+        Self { vars }
+    }
+
+    fn vars(&self) -> &BTreeMap<String, String> {
+        &self.vars
+    }
+
+    fn absorb_step_output(&mut self, record: &StepRunRecord) {
+        if let Some(session_id) = extract_session_id_from_output(&record.stdout)
+            .or_else(|| extract_session_id_from_output(&record.stderr))
+        {
+            self.vars.insert("SESSION".to_string(), session_id.clone());
+            self.vars.insert("CASTKIT_SESSION".to_string(), session_id);
+        }
+    }
+}
+
 pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteResponse> {
     if !args.non_interactive {
         return Ok(ExecuteResponse {
@@ -92,6 +125,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         scenes: Vec::new(),
         cleanup: Vec::new(),
     };
+    let mut runtime_env = RuntimeEnv::with_session(&args.session);
 
     let mut failures = Vec::new();
 
@@ -99,6 +133,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         sandbox.path(),
         &script.setup,
         "setup",
+        &mut runtime_env,
         &mut transcript.setup,
         &mut failures,
         &redactor,
@@ -109,6 +144,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         sandbox.path(),
         &script.checks,
         "checks",
+        &mut runtime_env,
         &mut transcript.checks,
         &mut failures,
         &redactor,
@@ -126,6 +162,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
             sandbox.path(),
             &scene.steps,
             &format!("scenes[{scene_idx}].steps"),
+            &mut runtime_env,
             &mut scene_transcript.steps,
             &mut failures,
             &redactor,
@@ -139,6 +176,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         sandbox.path(),
         &script.cleanup,
         "cleanup",
+        &mut runtime_env,
         &mut transcript.cleanup,
         &mut failures,
         &redactor,
@@ -225,6 +263,7 @@ async fn execute_group(
     cwd: &std::path::Path,
     steps: &[ScriptStep],
     group: &str,
+    runtime_env: &mut RuntimeEnv,
     out: &mut Vec<StepRunRecord>,
     failures: &mut Vec<ExecutionFailure>,
     redactor: &Redactor,
@@ -235,8 +274,11 @@ async fn execute_group(
 
     for (idx, step) in steps.iter().enumerate() {
         let path = format!("{group}[{idx}]");
-        match run_step(cwd, step).await {
+        match run_step(cwd, step, runtime_env.vars()).await {
             Ok(record_raw) => {
+                if record_raw.status == "ok" {
+                    runtime_env.absorb_step_output(&record_raw);
+                }
                 let expectation_error = evaluate_expectation(step.expect.as_ref(), &record_raw);
                 let has_expected_exit = step.expect.as_ref().and_then(|e| e.exit_code).is_some();
                 let failed = expectation_error.is_some()
@@ -276,6 +318,22 @@ async fn execute_group(
             }
         }
     }
+}
+
+fn extract_session_id_from_output(text: &str) -> Option<String> {
+    if text.trim().is_empty() {
+        return None;
+    }
+
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+        if let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) {
+            return Some(session_id.to_string());
+        }
+    }
+
+    SESSION_ID_RE
+        .captures(text)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
 }
 
 fn evaluate_expectation(
@@ -543,7 +601,10 @@ impl From<ValidationError> for ExecutionFailure {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_output_format, merge_branding, resolve_render_tuning, BrandingOverrides};
+    use super::{
+        extract_session_id_from_output, map_output_format, merge_branding, resolve_render_tuning,
+        BrandingOverrides, RuntimeEnv,
+    };
     use crate::branding::BrandingConfig;
     use crate::cli::{ExecutePreset, KeystrokeProfile, OutputFormat, RenderSpeed, ThemePreset};
     use crate::render::RenderOutputFormat;
@@ -623,5 +684,39 @@ mod tests {
             map_output_format(OutputFormat::Webm),
             RenderOutputFormat::Webm
         ));
+    }
+
+    #[test]
+    fn extracts_session_id_from_json_output() {
+        let output = r#"{"ok":true,"session_id":"sess_abc123"}"#;
+        assert_eq!(
+            extract_session_id_from_output(output).as_deref(),
+            Some("sess_abc123")
+        );
+    }
+
+    #[test]
+    fn runtime_env_updates_from_step_output() {
+        let mut env = RuntimeEnv::with_session("sess_initial");
+        let record = crate::execute::transcript::StepRunRecord {
+            id: "s1".to_string(),
+            run: "castkit handoff init . --json".to_string(),
+            stdout: "{\n  \"session_id\": \"sess_next\"\n}".to_string(),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms: 10,
+            status: "ok".to_string(),
+            error: None,
+        };
+        env.absorb_step_output(&record);
+
+        assert_eq!(
+            env.vars().get("SESSION").map(String::as_str),
+            Some("sess_next")
+        );
+        assert_eq!(
+            env.vars().get("CASTKIT_SESSION").map(String::as_str),
+            Some("sess_next")
+        );
     }
 }

@@ -1,136 +1,215 @@
-# castkit
+<p align="center">
+  <h1 align="center">castkit</h1>
+  <p align="center">
+    <strong>One command. Polished demo video. No manual recording.</strong>
+  </p>
+  <p align="center">
+    Agent-native CLI demo video generator with ScreenStudio-style rendering.
+  </p>
+</p>
 
-Agent-native CLI demo video generator for terminal tools, with ScreenStudio-style rendering.
+<p align="center">
+  <a href="#install">Install</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#agent-flow">Agent Flow</a> •
+  <a href="#presets">Presets</a> •
+  <a href="#branding">Branding</a>
+</p>
 
-## Why castkit
-- Evidence-first workflow for agents (`source_refs` are required).
-- Strict validation rejects invented/unsupported execution steps.
-- Non-interactive deterministic run mode for reproducible demos.
-- Polished terminal video output (typed commands, streamed output, auto camera, branding, avatar, watermark, optional audio).
+---
 
-See agent contract: `AGENTS.md`.
-For scenario-writing quality rules (what to show, pacing, checks), see `AGENTS.md` sections
-`Scenario Design Playbook` and `Pre-Execute Quality Gate`.
+<p align="center">
+  <img src="examples/castkit-meta-demo.gif" alt="castkit meta demo" width="640" />
+</p>
 
-## Install requirements
+## What is castkit?
+
+Point castkit at any CLI binary. It auto-discovers help text, README, and file structure — then generates a polished terminal demo video with typed commands, streamed output, camera motion, branding, and typing sounds.
+
+Built for AI agents, works for humans.
+
+```bash
+# Full pipeline: discover → plan → validate → render
+castkit handoff init ./my-cli --json
+castkit plan scaffold --session $SESSION --json
+castkit validate --session $SESSION --script demo.json --json
+castkit execute --session $SESSION --script demo.json --non-interactive --preset polished --output demo.mp4
+```
+
+### Key features
+
+- 🔍 **Auto-discovery** — Extracts help text, README, file structure, and probes to build an evidence graph
+- 🛡️ **Evidence-first** — Every demo step requires `source_refs` from real discovery. No invented commands
+- ✅ **Strict validation** — Rejects scripts with unknown commands, missing refs, or invalid patterns
+- 🎬 **ScreenStudio-quality rendering** — Auto camera zoom, cursor tracking, crossfade transitions, typing sounds
+- 🎨 **Branding** — Intro/outro cards, watermark, avatar, custom color themes
+- 🔒 **Auto-redaction** — Built-in secret detection (API keys, tokens, paths) with configurable patterns
+- 🤖 **Agent-native** — Deterministic non-interactive mode with JSON I/O for any coding agent
+- 📦 **Self-contained** — Single Rust binary + ffmpeg + Node renderer. No Docker, no browser recording
+
+## Install
+
+### Requirements
+
 - Rust 1.75+
 - Node 20+
 - `ffmpeg` in `PATH`
-- Playwright Chromium runtime
+- Playwright Chromium
 
-Renderer setup:
+### Build from source
+
 ```bash
+git clone https://github.com/deeflect/castkit.git
+cd castkit
+cargo install --path .
+
+# Set up the renderer
 npm install --prefix renderer-runtime
 npx --prefix renderer-runtime playwright install chromium
 ```
 
-## Build
+## Quick Start
+
 ```bash
-cargo build
+# 1. Point at any CLI
+castkit handoff init ./my-tool --json
+
+# 2. Auto-generate a demo script
+castkit plan scaffold --session $SESSION --max-scenes 3 --json
+
+# 3. Validate (catches invented commands, missing refs)
+castkit validate --session $SESSION --script demo-script.json --json
+
+# 4. Render the video
+castkit execute --session $SESSION --script demo-script.json \
+  --non-interactive --preset polished --output demo.mp4
 ```
 
-## Release prep
-- Local preflight: `./scripts/release-ready.sh`
-- Publish runbook: `docs/PUBLISHING.md`
-- CI gates: `.github/workflows/ci.yml` and `.github/workflows/release-readiness.yml`
+## Agent Flow
 
-## Agent flow (non-interactive)
-1. Bootstrap contract: `castkit --json agent contract`
-2. Bootstrap schema: `castkit --json schema`
-3. `castkit handoff init <target> --json`
-4. `castkit handoff list --session <id> --source <help|readme|files|probes> --page 1 --per-page 20 --json`
-5. `castkit handoff get --session <id> --ref <ref_id> --json`
-6. Optional scaffold: `castkit plan scaffold --session <id> --output demo-script.json --max-scenes 3 --json`
-7. Write or refine strict `DemoScript` JSON (template: `examples/demo-script.template.json`)
-8. `castkit validate --session <id> --script demo.json --json`
-9. `castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json`
+castkit is designed for AI agents to use programmatically. Full JSON I/O, deterministic execution, no human intervention needed.
 
-Automation rule:
-- Treat a step as successful only if process exit code is `0` and JSON has `"ok": true`.
+```
+Binary → Discover → Plan → Validate → Execute → MP4/GIF
+```
 
-Contract/schema commands:
-- Human-readable contract: `castkit agent contract`
-- Machine-readable contract: `castkit --json agent contract`
-- Machine-readable DemoScript schema: `castkit --json schema`
+### Step by step
 
-## Execute presets (easy settings)
-- `--preset quick`: fastest iteration (`fast`, `minimal`, `laptop`, `fps=30`)
-- `--preset balanced`: good quality/speed tradeoff (`quality`, `clean`, `laptop`, `fps=45`)
-- `--preset polished`: showcase defaults (`quality`, `clean`, `mechanical`, `fps=60`)
+```bash
+# Bootstrap: load contract + schema
+castkit --json agent contract
+castkit --json schema
 
-Explicit flags still override preset defaults:
-- `--fps`
-- `--speed fast|quality`
-- `--theme clean|bold|minimal`
-- `--keystroke-profile mechanical|laptop|silent`
+# Initialize handoff session (auto-discovers the target)
+castkit handoff init <target> --json
+
+# Browse discovered evidence
+castkit handoff list --session <id> --source help --page 1 --per-page 20 --json
+castkit handoff list --session <id> --source readme --page 1 --per-page 20 --json
+
+# Fetch specific refs
+castkit handoff get --session <id> --ref <ref_id> --json
+
+# Generate scaffold script
+castkit plan scaffold --session <id> --output demo.json --max-scenes 3 --json
+
+# Validate → Execute
+castkit validate --session <id> --script demo.json --json
+castkit execute --session <id> --script demo.json --non-interactive --preset polished --output demo.mp4 --json
+```
+
+> **Rule:** A step succeeds only if exit code is `0` and JSON contains `"ok": true`.
+
+### Session chaining
+
+Castkit automatically captures `session_id` from step output and makes it available as `$SESSION` in subsequent steps — no manual wiring needed.
+
+## Presets
+
+| Preset | Speed | Theme | Keystrokes | FPS | Use case |
+|--------|-------|-------|------------|-----|----------|
+| `quick` | fast | minimal | laptop | 30 | Fast iteration |
+| `balanced` | quality | clean | laptop | 45 | Good enough |
+| `polished` | quality | clean | mechanical | 60 | Showcase / launch |
+
+```bash
+castkit execute --preset polished --output demo.mp4 ...
+```
+
+Override any preset default with explicit flags: `--fps`, `--speed`, `--theme`, `--keystroke-profile`.
 
 ## Branding
-Branding sources are merged in this order:
-1. `--theme` base palette
-2. `script.branding`
-3. `--branding <file.json>`
-4. direct CLI overrides (`--brand-title`, `--watermark`, `--avatar-x`, `--avatar-url`, `--avatar-label`)
 
-Branding schema (all optional):
+Customize intro/outro cards, colors, watermark, and avatar.
+
 ```json
 {
-  "title": "string",
+  "title": "my-tool",
   "bg_primary": "#0A1020",
   "bg_secondary": "#14243B",
   "text_primary": "#EAF2FF",
   "text_muted": "#9CB2D1",
   "command_text": "#8ED0FF",
   "accent": "#69C2FF",
-  "watermark_text": "castkit.com",
-  "avatar_x": "fric",
-  "avatar_url": "https://.../avatar.png",
-  "avatar_label": "@fric"
+  "watermark_text": "github.com/you/tool",
+  "avatar_x": "yourhandle",
+  "avatar_label": "@yourhandle"
 }
 ```
 
-Ready palette files: `examples/branding-clean.json`, `examples/branding-bold.json`, `examples/branding-minimal.json`.
+Sources merge in order: `--theme` base → `script.branding` → `--branding file.json` → CLI overrides.
 
-## Output rendering behavior
-- Command typing drives camera zoom/focus.
-- Model/output sections stay cleaner (no typing-focused zoom).
-- Long output is paginated with markers (`-- page x/y --`) instead of truncation.
-- `--no-zoom` locks camera framing (no pan/zoom motion).
-- Typing sound + music are optional.
-- Output formats: `mp4` (default), `webm`, `gif` via `--format`.
-- Video encoding uses software `libx264` for stable quality.
+Ready-made palettes in `examples/`: `branding-clean.json`, `branding-bold.json`, `branding-minimal.json`.
 
-## Execution timing guidance
-Use broad timeout budgets because render cost depends on machine/per-preset quality.
+## Output
 
-Polling:
-- Check every `20s` while `execute` runs.
-- If using cron/watchdog, check active jobs every `1m`.
+| Format | Flag | Notes |
+|--------|------|-------|
+| MP4 | `--format mp4` (default) | H.264, best quality |
+| WebM | `--format webm` | VP9, smaller files |
+| GIF | `--format gif` | For READMEs and tweets |
 
-Timeout defaults:
-- soft timeout: `8m`
-- hard timeout: `20m`
+### Rendering details
 
-Approximate `execute` runtime:
-- Short output (20-45s video): `~1-5m` (preset-dependent)
-- Medium output (60-120s video): `~2-10m`
-- Long output (3-5 min video): `~6-20m`
+- Auto camera zoom follows cursor during typing
+- Crossfade transitions between scenes
+- Long output paginated with `-- page x/y --` markers
+- `--no-zoom` for static framing
+- Typing sounds (optional, via `audio.typing` in script)
 
-Fallback hard-timeout heuristic:
-- `hard_timeout_minutes = max(10, ceil(video_minutes * 4))`, cap at `20`.
+## Validation
 
-## Renderer runtime override
-Default discovery:
-1. `./renderer-runtime`
+Every script is validated before execution:
 
-Override:
-```bash
-CASTKIT_RENDERER_HOME=/abs/path/to/renderer-runtime castkit execute ...
+- Each step must have non-empty `source_refs` from the handoff session
+- Each `source_ref` must exist in the session
+- Unknown commands fail unless marked `manual_step=true` with a `manual_reason`
+- Invalid redaction regex patterns are caught
+- Built-in secret redaction is always applied
+
+## Project Structure
+
+```
+castkit/
+├── src/                    # Rust CLI source
+│   ├── execute/            # Step runner, redaction, transcripts
+│   ├── handoff/            # Session management, ref discovery
+│   ├── render/             # Renderer orchestration
+│   ├── validate/           # Script validation engine
+│   └── plan/               # Script scaffold generation
+├── renderer-runtime/       # Node.js ScreenStudio-style renderer
+│   └── render.mjs          # Playwright-based frame capture + ffmpeg encode
+├── examples/               # Demo scripts, branding presets, sample videos
+├── AGENTS.md               # Full agent contract + scenario design playbook
+└── SPEC.md                 # Technical specification
 ```
 
-## Strict validation rules
-- Each executable step must have non-empty `source_refs`.
-- Each `source_ref` must exist in the session.
-- Unknown commands fail unless `manual_step=true` and `manual_reason` is set.
-- `.env` and common config file usage should be established in setup first.
-- Invalid `redactions[].pattern` regex fails validation.
-- Built-in secret redaction is always applied during execution output capture.
+## License
+
+MIT
+
+---
+
+<p align="center">
+  Built by <a href="https://x.com/deeflectcom">@deeflectcom</a>
+</p>

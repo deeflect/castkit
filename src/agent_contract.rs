@@ -36,8 +36,16 @@ pub fn contract_json() -> Value {
         "Never invent executable commands/flags/paths/setup steps.",
         "Every executable step must include non-empty source_refs from active session.",
         "Run validate before execute.",
-        "Use non-interactive execution for deterministic runs."
+        "Use non-interactive execution for deterministic runs.",
+        "Bootstrap commands (agent contract/schema) are for planning context, not showcase scene output."
       ],
+      "runtime_env": {
+        "always_set": ["SESSION", "CASTKIT_SESSION"],
+        "notes": [
+          "Both vars start as execute --session value.",
+          "If a step outputs JSON with session_id, runtime vars update for following steps."
+        ]
+      },
       "completion_contract": {
         "success_conditions": {
           "exit_code": 0,

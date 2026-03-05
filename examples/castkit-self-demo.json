@@ -1,0 +1,116 @@
+{
+  "version": "1",
+  "setup": [],
+  "scenes": [
+    {
+      "id": "scene_01",
+      "title": "CLI Overview",
+      "steps": [
+        {
+          "id": "step_help",
+          "run": "castkit --help",
+          "expect": { "contains": "Agent-native CLI demo video generator", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_02",
+      "title": "Auto-Discover Any CLI",
+      "steps": [
+        {
+          "id": "step_init",
+          "run": "castkit handoff init $(which castkit) --json",
+          "expect": { "contains": "session_id", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001", "ref_readme_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_03",
+      "title": "Browse Evidence",
+      "steps": [
+        {
+          "id": "step_list_help",
+          "run": "castkit handoff list --session $SESSION --source help --page 1 --per-page 20 --json",
+          "expect": { "contains": "ref_help", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001", "ref_readme_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_04",
+      "title": "Fetch Source Ref",
+      "steps": [
+        {
+          "id": "step_get_ref",
+          "run": "castkit handoff get --session $SESSION --ref ref_help_0001 --json",
+          "expect": { "contains": "content", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001", "ref_readme_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_05",
+      "title": "Auto-Generate Script",
+      "steps": [
+        {
+          "id": "step_scaffold",
+          "run": "castkit plan scaffold --session $SESSION --max-scenes 3 --json",
+          "expect": { "contains": "scene", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001", "ref_readme_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    },
+    {
+      "id": "scene_06",
+      "title": "Execute & Render",
+      "steps": [
+        {
+          "id": "step_execute_help",
+          "run": "castkit execute --help",
+          "expect": { "contains": "preset", "regex": null, "exit_code": 0 },
+          "timeout_ms": 120000,
+          "source_refs": ["ref_help_0001"],
+          "manual_step": false,
+          "manual_reason": null
+        }
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "check_version",
+      "run": "castkit --version",
+      "expect": { "contains": "castkit", "regex": null, "exit_code": 0 },
+      "timeout_ms": 120000,
+      "source_refs": ["ref_probes_0001"],
+      "manual_step": false,
+      "manual_reason": null
+    }
+  ],
+  "cleanup": [],
+  "redactions": [],
+  "audio": { "typing": true, "music_path": null },
+  "branding": {
+    "title": "castkit — meta demo",
+    "watermark_text": "github.com/deeflect/castkit",
+    "avatar_x": "deeflectcom",
+    "avatar_label": "@deeflectcom"
+  }
+}

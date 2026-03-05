@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import Convert from 'ansi-to-html';
 
+const MANIFEST_CHUNK_CHARS = 512 * 1024;
+
 function nowMs() {
   return Number(process.hrtime.bigint()) / 1e6;
 }
@@ -247,6 +249,21 @@ async function encodeFramesViaPipe({ page, manifest, fps, speed, outputPath }) {
   };
 }
 
+async function injectManifestInChunks(page, manifest) {
+  const manifestJson = JSON.stringify(manifest);
+  for (let i = 0; i < manifestJson.length; i += MANIFEST_CHUNK_CHARS) {
+    const chunk = manifestJson.slice(i, i + MANIFEST_CHUNK_CHARS);
+    await page.evaluate((injectedChunk) => {
+      window.__appendManifestChunk(injectedChunk);
+    }, chunk);
+  }
+
+  await page.evaluate(() => {
+    window.__commitManifestChunks();
+  });
+  return Buffer.byteLength(manifestJson, 'utf8');
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (!args.manifest || !args.output) {
@@ -267,8 +284,12 @@ async function main() {
     ...rawManifest,
     fps,
     snapshots: rawManifest.snapshots.map((snapshot) => ({
-      ...snapshot,
-      html_lines: snapshot.lines.map((line) => converter.toHtml(line || ' '))
+      t_ms: snapshot.t_ms,
+      active_row: snapshot.active_row,
+      cursor_col: snapshot.cursor_col,
+      phase: snapshot.phase,
+      html_lines: snapshot.lines.map((line) => converter.toHtml(line || ' ')),
+      line_prefixes: snapshot.lines.map((line) => (line || ' ').charAt(0))
     }))
   };
   manifest.branding = await resolveAvatarWithCache(manifest.branding || {}, avatarCacheDir);
@@ -696,8 +717,8 @@ async function main() {
         terminal.innerHTML = visible.map((line, i) => {
           const absolute = topRow + i;
           const classes = ['line'];
-          if ((s.lines[absolute] || '').startsWith('#')) classes.push('scene');
-          if ((s.lines[absolute] || '').startsWith('$')) classes.push('cmd');
+          if ((s.line_prefixes[absolute] || '') === '#') classes.push('scene');
+          if ((s.line_prefixes[absolute] || '') === '$') classes.push('cmd');
           if (absolute === s.active_row) classes.push('active');
           return '<div class="' + classes.join(' ') + '">' + (line || '&nbsp;') + '</div>';
         }).join('');
@@ -775,6 +796,15 @@ async function main() {
   };
 
   window.__setManifest = (manifest) => window.__driver.init(manifest);
+  window.__manifestJsonBuffer = '';
+  window.__appendManifestChunk = (chunk) => {
+    window.__manifestJsonBuffer += chunk;
+  };
+  window.__commitManifestChunks = () => {
+    const manifest = JSON.parse(window.__manifestJsonBuffer || '{}');
+    window.__manifestJsonBuffer = '';
+    window.__setManifest(manifest);
+  };
   window.__renderAt = (tMs) => window.__driver.renderAt(tMs);
   window.__waitBranding = () => window.__brandingReady;
 </script>
@@ -782,9 +812,7 @@ async function main() {
 </html>
 `);
 
-  await page.evaluate((injectedManifest) => {
-    window.__setManifest(injectedManifest);
-  }, manifest);
+  const manifestBytes = await injectManifestInChunks(page, manifest);
   await page.evaluate(() => {
     if (window.__waitBranding) {
       return window.__waitBranding();
@@ -827,6 +855,7 @@ async function main() {
     ok: true,
     output: outputPath,
     fps,
+    manifest_bytes: manifestBytes,
     frames: frameCount,
     speed,
     video_encoder: videoEncoder,

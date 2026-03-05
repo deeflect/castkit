@@ -13,6 +13,7 @@ const HEIGHT: u32 = 1080;
 const OUTPUT_WRAP_WIDTH: usize = 110;
 const OUTPUT_PAGE_LINES: usize = 30;
 const OUTPUT_SNAPSHOT_STEP: usize = 2;
+const MANIFEST_WARN_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 pub enum RenderSpeedPreset {
@@ -134,7 +135,15 @@ pub fn render_screenstudio(
         "castkit-render-manifest-{}.json",
         uuid::Uuid::new_v4().simple()
     ));
-    fs::write(&manifest_path, serde_json::to_vec(&manifest)?)
+    let manifest_bytes = serde_json::to_vec(&manifest)?;
+    if manifest_bytes.len() >= MANIFEST_WARN_BYTES {
+        eprintln!(
+            "[castkit] warning: large render manifest ({:.1} MB, {} snapshots). Rendering may be slower.",
+            manifest_bytes.len() as f64 / (1024.0 * 1024.0),
+            manifest.snapshots.len()
+        );
+    }
+    fs::write(&manifest_path, &manifest_bytes)
         .with_context(|| format!("failed writing {}", manifest_path.display()))?;
 
     let intermediate_video_path = std::env::temp_dir().join(format!(

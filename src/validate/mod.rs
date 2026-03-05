@@ -235,24 +235,105 @@ fn first_command_token(run: &str) -> Option<String> {
         )
     })?;
 
+    let mut expect_command = true;
     for token in tokens {
-        if token == "&&" || token == "||" || token == ";" || token == "|" {
+        if is_command_separator(&token) {
+            expect_command = true;
             continue;
         }
 
-        if token.contains('=') && !token.starts_with("./") && !token.starts_with('/') {
-            let parts: Vec<&str> = token.split('=').collect();
-            if parts.len() == 2
-                && !parts[0].is_empty()
-                && parts[0]
-                    .chars()
-                    .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
-            {
-                continue;
-            }
+        if !expect_command {
+            continue;
         }
 
-        return Some(token);
+        if let Some(cmd) = command_from_assignment_token(&token) {
+            return Some(cmd);
+        }
+
+        if is_env_assignment_token(&token) {
+            continue;
+        }
+
+        if let Some(cmd) = normalize_command_token(&token) {
+            return Some(cmd);
+        }
+    }
+
+    None
+}
+
+fn is_command_separator(token: &str) -> bool {
+    matches!(token, "&&" | "||" | ";" | "|")
+}
+
+fn is_env_assignment_token(token: &str) -> bool {
+    let Some((name, _)) = token.split_once('=') else {
+        return false;
+    };
+    is_env_var_name(name)
+}
+
+fn command_from_assignment_token(token: &str) -> Option<String> {
+    let (name, value) = token.split_once('=')?;
+    if !is_env_var_name(name) {
+        return None;
+    }
+
+    if value.starts_with("$(") || value.starts_with('`') || value.starts_with('(') {
+        return normalize_command_token(value);
+    }
+
+    None
+}
+
+fn is_env_var_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn normalize_command_token(token: &str) -> Option<String> {
+    let mut cmd = token.trim();
+    if cmd.is_empty() {
+        return None;
+    }
+
+    while let Some(next) = cmd
+        .strip_prefix("$(")
+        .or_else(|| cmd.strip_prefix('('))
+        .or_else(|| cmd.strip_prefix('{'))
+        .or_else(|| cmd.strip_prefix('`'))
+        .or_else(|| cmd.strip_prefix('"'))
+        .or_else(|| cmd.strip_prefix('\''))
+    {
+        cmd = next.trim_start();
+        if cmd.is_empty() {
+            return None;
+        }
+    }
+
+    if cmd.starts_with('$') && !cmd.starts_with("$(") {
+        return None;
+    }
+
+    cmd = cmd.trim_end_matches(|c: char| {
+        matches!(c, ')' | '}' | '`' | '"' | '\'' | ';' | '|' | ',' | ':')
+    });
+
+    if cmd.is_empty() || cmd.starts_with('-') || cmd.contains('=') {
+        return None;
+    }
+
+    if cmd
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'))
+    {
+        return Some(cmd.to_string());
     }
 
     None
@@ -303,4 +384,28 @@ fn run_mentions_config_file(run: &str) -> bool {
 
 fn has_secret_literal(run: &str) -> bool {
     SECRET_LITERAL_RE.is_match(run)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_command_token;
+
+    #[test]
+    fn first_command_handles_subshell_assignment() {
+        let cmd = first_command_token("SESSION=$(ls .castkit/sessions | tail -n1)");
+        assert_eq!(cmd.as_deref(), Some("ls"));
+    }
+
+    #[test]
+    fn first_command_skips_env_prefix_assignment() {
+        let cmd =
+            first_command_token("FOO=bar BAR=baz castkit handoff list --session \"$SESSION\"");
+        assert_eq!(cmd.as_deref(), Some("castkit"));
+    }
+
+    #[test]
+    fn first_command_handles_plain_command() {
+        let cmd = first_command_token("castkit handoff init . --json");
+        assert_eq!(cmd.as_deref(), Some("castkit"));
+    }
 }
