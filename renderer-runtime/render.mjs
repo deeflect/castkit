@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import Convert from 'ansi-to-html';
 
@@ -138,6 +139,8 @@ function shouldCaptureFrame(previousState, nextState, reusedStreak) {
   if (Math.abs(num(nextState.terminal_y) - num(previousState.terminal_y)) >= 0.40) return true;
   if (Math.abs(num(nextState.scene_opacity) - num(previousState.scene_opacity)) >= 0.05) return true;
   if (Math.abs(num(nextState.intro_opacity) - num(previousState.intro_opacity)) >= 0.05) return true;
+  if ((nextState.overlay_id || '') !== (previousState.overlay_id || '')) return true;
+  if (Math.abs(num(nextState.overlay_opacity) - num(previousState.overlay_opacity)) >= 0.05) return true;
 
   if (nextState.cursor_visible) {
     if (Math.abs(num(nextState.cursor_x) - num(previousState.cursor_x)) >= 0.75) return true;
@@ -264,6 +267,35 @@ async function injectManifestInChunks(page, manifest) {
   return Buffer.byteLength(manifestJson, 'utf8');
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+async function normalizeOverlayEvents(rawEvents) {
+  const normalized = [];
+  for (const event of asArray(rawEvents)) {
+    if (!event || typeof event !== 'object') continue;
+    let imageUrl = null;
+    const imagePath = typeof event.image_path === 'string' ? event.image_path.trim() : '';
+    if (imagePath) {
+      const resolved = path.resolve(imagePath);
+      try {
+        await fs.access(resolved);
+        imageUrl = pathToFileURL(resolved).href;
+      } catch {
+        imageUrl = null;
+      }
+    }
+    normalized.push({
+      ...event,
+      result_items: asArray(event.result_items),
+      image_url: imageUrl
+    });
+  }
+  normalized.sort((a, b) => num(a.t_ms) - num(b.t_ms));
+  return normalized;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   if (!args.manifest || !args.output) {
@@ -279,6 +311,7 @@ async function main() {
 
   const rawManifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
   const converter = new Convert({ escapeXML: true, newline: false });
+  const overlayEvents = await normalizeOverlayEvents(rawManifest.overlay_events);
 
   const manifest = {
     ...rawManifest,
@@ -290,7 +323,8 @@ async function main() {
       phase: snapshot.phase,
       html_lines: snapshot.lines.map((line) => converter.toHtml(line || ' ')),
       line_prefixes: snapshot.lines.map((line) => (line || ' ').charAt(0))
-    }))
+    })),
+    overlay_events: overlayEvents
   };
   manifest.branding = await resolveAvatarWithCache(manifest.branding || {}, avatarCacheDir);
 
@@ -428,6 +462,58 @@ async function main() {
     box-shadow: 0 0 11px var(--cursor-glow);
     will-change: transform, opacity;
   }
+  #overlayLayer {
+    position: absolute;
+    max-width: 520px;
+    min-width: 260px;
+    opacity: 0;
+    will-change: transform, opacity;
+    pointer-events: none;
+  }
+  .overlay-card {
+    border-radius: 14px;
+    background: rgba(8, 18, 34, 0.84);
+    border: 1px solid rgba(184, 206, 236, 0.28);
+    box-shadow: 0 18px 34px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(6px);
+    color: var(--line);
+    overflow: hidden;
+  }
+  .overlay-title {
+    font-size: 13px;
+    letter-spacing: 0.25px;
+    color: var(--line-dim);
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid rgba(184, 206, 236, 0.16);
+  }
+  .overlay-image {
+    display: block;
+    width: 100%;
+    max-height: 310px;
+    object-fit: contain;
+    background: rgba(0, 0, 0, 0.18);
+  }
+  .overlay-body {
+    padding: 10px 12px 12px;
+    display: grid;
+    gap: 7px;
+  }
+  .overlay-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 14px;
+  }
+  .overlay-item-label {
+    color: var(--line-dim);
+    white-space: nowrap;
+  }
+  .overlay-item-value {
+    color: var(--line);
+    text-align: right;
+    word-break: break-word;
+  }
   #veil {
     position: absolute;
     inset: 0;
@@ -509,6 +595,7 @@ async function main() {
       <div id="terminalWrap">
         <div id="terminal"></div>
         <div id="cursor"></div>
+        <div id="overlayLayer"></div>
       </div>
     </div>
   </div>
@@ -634,6 +721,54 @@ async function main() {
     });
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function overlayPosition(position) {
+    switch (position) {
+      case 'top_left':
+        return { left: 16, top: 16 };
+      case 'bottom_left':
+        return { left: 16, bottom: 16 };
+      case 'bottom_right':
+        return { right: 16, bottom: 16 };
+      case 'center':
+        return { center: true };
+      case 'top_right':
+      default:
+        return { right: 16, top: 16 };
+    }
+  }
+
+  function overlayMarkup(event) {
+    const title = typeof event.title === 'string' && event.title.trim().length > 0
+      ? event.title.trim()
+      : '';
+    const titleHtml = title ? ('<div class="overlay-title">' + escapeHtml(title) + '</div>') : '';
+
+    if (event.artifact_type === 'image' && typeof event.image_url === 'string' && event.image_url.length > 0) {
+      return '<div class="overlay-card">' +
+        titleHtml +
+        '<img class="overlay-image" src="' + escapeHtml(event.image_url) + '" alt="artifact image" />' +
+      '</div>';
+    }
+
+    const items = Array.isArray(event.result_items) ? event.result_items : [];
+    const rows = items.map((item) => (
+      '<div class="overlay-item">' +
+        '<span class="overlay-item-label">' + escapeHtml(item?.label ?? '') + '</span>' +
+        '<span class="overlay-item-value">' + escapeHtml(item?.value ?? '') + '</span>' +
+      '</div>'
+    )).join('');
+    return '<div class="overlay-card">' + titleHtml + '<div class="overlay-body">' + rows + '</div></div>';
+  }
+
   window.__driver = {
     manifest: null,
     idx: 0,
@@ -644,6 +779,7 @@ async function main() {
     scrollTop: 0.0,
     lastIdx: -1,
     lastTopRow: -1,
+    overlayKey: '',
     init(manifest) {
       this.manifest = manifest;
       this.idx = 0;
@@ -654,6 +790,7 @@ async function main() {
       this.scrollTop = 0.0;
       this.lastIdx = -1;
       this.lastTopRow = -1;
+      this.overlayKey = '';
       applyBranding(manifest.branding || {});
     },
     renderAt(tMs) {
@@ -665,6 +802,7 @@ async function main() {
       const camera = document.getElementById('camera');
       const veil = document.getElementById('veil');
       const sceneTag = document.getElementById('sceneTag');
+      const overlayLayer = document.getElementById('overlayLayer');
 
       const lineHeight = manifest.line_height || 24;
       const maxRows = Math.floor((970 - 46 - 40) / lineHeight);
@@ -704,6 +842,91 @@ async function main() {
       } else {
         sceneTag.style.opacity = '0';
         sceneTag.style.transform = 'translateY(8px)';
+      }
+
+      const overlayEvents = manifest.overlay_events || [];
+      let activeOverlay = null;
+      for (let i = overlayEvents.length - 1; i >= 0; i -= 1) {
+        const event = overlayEvents[i];
+        if (!event || typeof event !== 'object') continue;
+        const startMs = num(event.t_ms);
+        const endMs = startMs + Math.max(300, num(event.show_ms || 0));
+        if (tMs >= startMs && tMs <= (endMs + 180)) {
+          activeOverlay = event;
+          break;
+        }
+      }
+
+      let overlayOpacity = 0;
+      let overlayId = '';
+      if (activeOverlay) {
+        const startMs = num(activeOverlay.t_ms);
+        const showMs = Math.max(300, num(activeOverlay.show_ms || 0));
+        const elapsed = tMs - startMs;
+        const enterMs = 180;
+        const exitMs = 160;
+        const exitStart = showMs - exitMs;
+
+        if (elapsed < 0 || elapsed > (showMs + exitMs)) {
+          overlayLayer.style.opacity = '0';
+          overlayLayer.style.display = 'none';
+        } else {
+          if (elapsed < enterMs) overlayOpacity = Math.max(0, Math.min(1, elapsed / enterMs));
+          else if (elapsed > exitStart) overlayOpacity = Math.max(0, Math.min(1, (showMs + exitMs - elapsed) / (exitMs * 2)));
+          else overlayOpacity = 1;
+
+          overlayId = String(activeOverlay.step_id || '') + ':' + String(activeOverlay.t_ms || 0) + ':' + String(activeOverlay.artifact_type || '');
+          if (this.overlayKey !== overlayId) {
+            overlayLayer.innerHTML = overlayMarkup(activeOverlay);
+            this.overlayKey = overlayId;
+          }
+
+          overlayLayer.style.display = 'block';
+          overlayLayer.style.opacity = overlayOpacity.toFixed(3);
+
+          overlayLayer.style.left = 'auto';
+          overlayLayer.style.right = 'auto';
+          overlayLayer.style.top = 'auto';
+          overlayLayer.style.bottom = 'auto';
+
+          const pos = overlayPosition(activeOverlay.position);
+          if (pos.center) {
+            overlayLayer.style.left = '50%';
+            overlayLayer.style.top = '50%';
+          } else {
+            if (typeof pos.left === 'number') overlayLayer.style.left = pos.left + 'px';
+            if (typeof pos.right === 'number') overlayLayer.style.right = pos.right + 'px';
+            if (typeof pos.top === 'number') overlayLayer.style.top = pos.top + 'px';
+            if (typeof pos.bottom === 'number') overlayLayer.style.bottom = pos.bottom + 'px';
+          }
+
+          const enterKind = String(activeOverlay.enter || 'fade');
+          let offsetX = 0;
+          let offsetY = 0;
+          if (enterKind === 'slide') {
+            const shift = (1 - overlayOpacity) * 26;
+            offsetY = shift;
+          } else if (enterKind === 'scale') {
+            const scale = 0.94 + (overlayOpacity * 0.06);
+            if (pos.center) {
+              overlayLayer.style.transform = 'translate(-50%, -50%) scale(' + scale.toFixed(4) + ')';
+            } else {
+              overlayLayer.style.transform = 'translate(0px, 0px) scale(' + scale.toFixed(4) + ')';
+            }
+          }
+
+          if (enterKind !== 'scale') {
+            if (pos.center) {
+              overlayLayer.style.transform = 'translate(calc(-50% + ' + offsetX.toFixed(1) + 'px), calc(-50% + ' + offsetY.toFixed(1) + 'px))';
+            } else {
+              overlayLayer.style.transform = 'translate(' + offsetX.toFixed(1) + 'px, ' + offsetY.toFixed(1) + 'px)';
+            }
+          }
+        }
+      } else {
+        overlayLayer.style.opacity = '0';
+        overlayLayer.style.display = 'none';
+        this.overlayKey = '';
       }
 
       const desiredTop = Math.max(0, activeRowF - (maxRows * 0.62));
@@ -790,7 +1013,9 @@ async function main() {
         camera_y: this.cameraY,
         zoom: this.zoom,
         intro_opacity: Number(introOpacity),
-        scene_opacity: Number(sceneTag.style.opacity || 0)
+        scene_opacity: Number(sceneTag.style.opacity || 0),
+        overlay_id: overlayId,
+        overlay_opacity: overlayOpacity
       };
     }
   };

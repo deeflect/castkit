@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::branding::BrandingConfig;
-use crate::execute::transcript::{ExecutionTranscript, StepRunRecord};
+use crate::execute::transcript::{ExecutionTranscript, OverlayEvent, StepRunRecord};
 
 const WIDTH: u32 = 1920;
 const HEIGHT: u32 = 1080;
@@ -109,6 +109,7 @@ struct RenderManifest {
     branding: Option<BrandingConfig>,
     scene_cues: Vec<SceneCue>,
     snapshots: Vec<RenderSnapshot>,
+    overlay_events: Vec<OverlayEvent>,
 }
 
 pub fn render_screenstudio(
@@ -116,6 +117,8 @@ pub fn render_screenstudio(
     opts: RenderOptions,
 ) -> Result<RenderArtifacts> {
     let (snapshots, scene_cues, keystrokes, duration_secs) = build_timeline(transcript);
+    let overlay_events = build_overlay_events(&transcript.overlay_events);
+    let duration_secs = duration_secs.max(max_overlay_end_secs(&overlay_events));
     let fps = opts.fps.max(24);
 
     let manifest = RenderManifest {
@@ -129,6 +132,7 @@ pub fn render_screenstudio(
         branding: opts.branding,
         scene_cues,
         snapshots,
+        overlay_events,
     };
 
     let manifest_path = std::env::temp_dir().join(format!(
@@ -201,6 +205,21 @@ pub fn render_screenstudio(
         output_path: opts.output_path,
         duration_secs: manifest.duration_ms as f32 / 1000.0,
     })
+}
+
+fn build_overlay_events(events: &[OverlayEvent]) -> Vec<OverlayEvent> {
+    let mut out = events.to_vec();
+    out.sort_by_key(|event| event.t_ms);
+    out
+}
+
+fn max_overlay_end_secs(events: &[OverlayEvent]) -> f32 {
+    let max_end_ms = events
+        .iter()
+        .map(|event| event.t_ms.saturating_add(event.show_ms))
+        .max()
+        .unwrap_or(0);
+    (max_end_ms as f32 / 1000.0) + 0.45
 }
 
 fn run_playwright_renderer(
@@ -1046,5 +1065,52 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line == &format!("line {}", OUTPUT_PAGE_LINES + 6)));
+    }
+
+    #[test]
+    fn overlay_events_are_sorted_for_manifest() {
+        let events = vec![
+            OverlayEvent {
+                t_ms: 800,
+                step_id: "b".to_string(),
+                artifact_type: crate::execute::transcript::OverlayArtifactType::ResultCard,
+                title: None,
+                image_path: None,
+                result_items: vec![],
+                position: crate::script::ArtifactPosition::TopRight,
+                show_ms: 1200,
+                enter: crate::script::ArtifactEnter::Fade,
+            },
+            OverlayEvent {
+                t_ms: 300,
+                step_id: "a".to_string(),
+                artifact_type: crate::execute::transcript::OverlayArtifactType::Image,
+                title: None,
+                image_path: Some("/tmp/x.png".to_string()),
+                result_items: vec![],
+                position: crate::script::ArtifactPosition::TopLeft,
+                show_ms: 1200,
+                enter: crate::script::ArtifactEnter::Slide,
+            },
+        ];
+        let sorted = build_overlay_events(&events);
+        assert_eq!(sorted[0].step_id, "a");
+        assert_eq!(sorted[1].step_id, "b");
+    }
+
+    #[test]
+    fn overlay_end_extends_duration() {
+        let events = vec![OverlayEvent {
+            t_ms: 4_800,
+            step_id: "a".to_string(),
+            artifact_type: crate::execute::transcript::OverlayArtifactType::Image,
+            title: None,
+            image_path: Some("/tmp/x.png".to_string()),
+            result_items: vec![],
+            position: crate::script::ArtifactPosition::TopLeft,
+            show_ms: 2_000,
+            enter: crate::script::ArtifactEnter::Fade,
+        }];
+        assert!(max_overlay_end_secs(&events) >= 6.8);
     }
 }
