@@ -231,6 +231,10 @@ async function main() {
     : { width: 2304, height: 1296 };
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1 });
   const page = await context.newPage();
+  const pageErrors = [];
+  page.on('pageerror', (err) => {
+    pageErrors.push(err?.stack || err?.message || String(err));
+  });
 
   await page.setContent(`
 <!doctype html>
@@ -316,6 +320,54 @@ async function main() {
     overflow: hidden;
     background: rgba(10, 16, 28, 0.92);
   }
+  #browserHud {
+    position: absolute;
+    top: 10px;
+    left: 16px;
+    right: 16px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+  }
+  #tabTitle {
+    max-width: 24%;
+    font-size: 12px;
+    color: rgba(226, 236, 248, 0.84);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #urlPill {
+    flex: 1;
+    min-width: 0;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 0 12px;
+    background: rgba(11, 21, 36, 0.78);
+    border: 1px solid rgba(156, 186, 223, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  #urlDot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(98, 224, 172, 0.92);
+    box-shadow: 0 0 8px rgba(98, 224, 172, 0.4);
+    flex: 0 0 auto;
+  }
+  #urlText {
+    min-width: 0;
+    font-size: 12px;
+    color: rgba(226, 236, 248, 0.88);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   #page {
     position: absolute;
     left: 0;
@@ -333,7 +385,7 @@ async function main() {
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
     background: rgba(8, 14, 24, 0.82);
     opacity: 0;
     transition: opacity 120ms linear;
@@ -417,6 +469,13 @@ async function main() {
         <div id="title">castkit • web mode</div>
       </div>
       <div id="viewport">
+        <div id="browserHud">
+          <div id="tabTitle"></div>
+          <div id="urlPill">
+            <span id="urlDot"></span>
+            <span id="urlText"></span>
+          </div>
+        </div>
         <div id="page">
           <div id="placeholder"></div>
           <img id="shot" alt="screenshot"/>
@@ -437,6 +496,17 @@ async function main() {
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
+  }
+
+  function niceUrl(value) {
+    if (typeof value !== 'string' || !value.trim()) return '';
+    try {
+      const u = new URL(value);
+      const path = (u.pathname || '/').replace(/\\/+$/, '') || '/';
+      return u.host + path + (u.search || '');
+    } catch {
+      return value;
+    }
   }
 
   window.__driver = {
@@ -481,6 +551,8 @@ async function main() {
       const pulseEl = document.getElementById('pulse');
       const actionEl = document.getElementById('action');
       const cameraEl = document.getElementById('camera');
+      const urlTextEl = document.getElementById('urlText');
+      const tabTitleEl = document.getElementById('tabTitle');
 
       let activeShot = null;
       for (let i = this.idx; i >= 0; i -= 1) {
@@ -498,6 +570,22 @@ async function main() {
         placeholderEl.style.opacity = '1';
       }
 
+      let currentUrl = '';
+      let currentTitle = '';
+      for (let i = this.idx; i >= 0; i -= 1) {
+        const item = actions[i];
+        if (!item || typeof item !== 'object') continue;
+        if (!currentUrl && typeof item.page_url === 'string' && item.page_url.trim()) {
+          currentUrl = item.page_url.trim();
+        }
+        if (!currentTitle && typeof item.page_title === 'string' && item.page_title.trim()) {
+          currentTitle = item.page_title.trim();
+        }
+        if (currentUrl && currentTitle) break;
+      }
+      urlTextEl.textContent = niceUrl(currentUrl);
+      tabTitleEl.textContent = currentTitle || niceUrl(currentUrl);
+
       const actionStart = action ? num(action.t_ms) : 0;
       const nextStart = nextAction ? num(nextAction.t_ms) : actionStart + 240;
       const span = Math.max(1, nextStart - actionStart);
@@ -513,7 +601,7 @@ async function main() {
       const sourceW = Math.max(1, num(shotEl.naturalWidth || 1440));
       const sourceH = Math.max(1, num(shotEl.naturalHeight || 900));
       const pageRect = pageEl.getBoundingClientRect();
-      const fitScale = Math.min(pageRect.width / sourceW, pageRect.height / sourceH);
+      const fitScale = Math.max(pageRect.width / sourceW, pageRect.height / sourceH);
       const drawW = sourceW * fitScale;
       const drawH = sourceH * fitScale;
       const drawOffsetX = (pageRect.width - drawW) * 0.5;
@@ -591,6 +679,10 @@ async function main() {
 </html>
 `);
 
+  const setManifestType = await page.evaluate(() => typeof window.__setManifest);
+  if (setManifestType !== 'function') {
+    throw new Error(`web runtime init failed: window.__setManifest=${setManifestType}; pageErrors=${pageErrors.join(' | ')}`);
+  }
   await page.evaluate((m) => window.__setManifest(m), manifest);
 
   let frameCount = 0;

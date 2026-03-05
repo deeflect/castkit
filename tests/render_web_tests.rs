@@ -28,6 +28,8 @@ fn render_web_manifest_serializes_action_keyframes() {
                 target_w: Some(160.0),
                 target_h: Some(40.0),
                 screenshot_path: None,
+                page_url: Some("https://example.com".to_string()),
+                page_title: Some("Example".to_string()),
             },
             WebActionRecord {
                 id: "a".to_string(),
@@ -44,6 +46,8 @@ fn render_web_manifest_serializes_action_keyframes() {
                 target_w: None,
                 target_h: None,
                 screenshot_path: None,
+                page_url: Some("https://example.com".to_string()),
+                page_title: Some("Example".to_string()),
             },
         ],
     };

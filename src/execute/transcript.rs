@@ -80,4 +80,6 @@ pub struct WebActionRecord {
     pub target_w: Option<f32>,
     pub target_h: Option<f32>,
     pub screenshot_path: Option<String>,
+    pub page_url: Option<String>,
+    pub page_title: Option<String>,
 }

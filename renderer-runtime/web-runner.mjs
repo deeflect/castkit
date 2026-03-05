@@ -67,7 +67,7 @@ async function moveMouseToTarget(page, selector) {
   return { bbox, x, y };
 }
 
-function recordFromAction(action, actionType, tMs, durationMs, status, error, bbox, cursor, screenshotPath) {
+function recordFromAction(action, actionType, tMs, durationMs, status, error, bbox, cursor, screenshotPath, pageUrl, pageTitle) {
   return {
     id: asString(action.id),
     action_type: actionType,
@@ -82,7 +82,9 @@ function recordFromAction(action, actionType, tMs, durationMs, status, error, bb
     target_y: Number.isFinite(bbox?.y) ? bbox.y : null,
     target_w: Number.isFinite(bbox?.width) ? bbox.width : null,
     target_h: Number.isFinite(bbox?.height) ? bbox.height : null,
-    screenshot_path: screenshotPath || null
+    screenshot_path: screenshotPath || null,
+    page_url: pageUrl || null,
+    page_title: pageTitle || null
   };
 }
 
@@ -207,7 +209,27 @@ async function runActions(payload, cwd) {
 
       const tMs = actionStart - startedAt;
       const durationMs = Date.now() - actionStart;
-      records.push(recordFromAction(action, actionType, tMs, durationMs, status, error, bbox, cursor, screenshotPath));
+      let pageTitle = null;
+      try {
+        pageTitle = await page.title();
+      } catch {
+        pageTitle = null;
+      }
+      records.push(
+        recordFromAction(
+          action,
+          actionType,
+          tMs,
+          durationMs,
+          status,
+          error,
+          bbox,
+          cursor,
+          screenshotPath,
+          page.url(),
+          pageTitle,
+        )
+      );
 
       if (status !== 'ok') break;
     }

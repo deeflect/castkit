@@ -103,6 +103,8 @@ fn stub_actions(web: &WebConfig) -> Vec<WebActionRecord> {
                 target_w: action.selector.as_ref().map(|_| 220.0),
                 target_h: action.selector.as_ref().map(|_| 58.0),
                 screenshot_path: action.path.clone(),
+                page_url: web.base_url.clone(),
+                page_title: Some("stub page".to_string()),
             }
         })
         .collect()

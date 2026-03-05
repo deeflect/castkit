@@ -89,8 +89,7 @@ fn build_web_manifest(
     no_zoom: bool,
     branding: Option<BrandingConfig>,
 ) -> WebRenderManifest {
-    let mut actions = transcript.web_actions.clone();
-    actions.sort_by_key(|action| action.t_ms);
+    let actions = normalize_actions_for_render(&transcript.web_actions);
     let duration_ms = actions
         .iter()
         .map(|action| {
@@ -112,6 +111,38 @@ fn build_web_manifest(
         duration_ms,
         branding,
         actions,
+    }
+}
+
+fn normalize_actions_for_render(actions: &[WebActionRecord]) -> Vec<WebActionRecord> {
+    let mut out = actions.to_vec();
+    out.sort_by_key(|action| action.t_ms);
+
+    let mut cursor_ms = 0u64;
+    for action in &mut out {
+        let min_ms = min_duration_for_action(&action.action_type);
+        let start_ms = action.t_ms.max(cursor_ms);
+        let duration_ms = action.duration_ms.max(min_ms);
+        action.t_ms = start_ms;
+        action.duration_ms = duration_ms;
+        cursor_ms = start_ms.saturating_add(duration_ms);
+    }
+
+    out
+}
+
+fn min_duration_for_action(action_type: &str) -> u64 {
+    match action_type {
+        "goto" => 1_200,
+        "click" => 760,
+        "type" => 1_050,
+        "press" => 700,
+        "wait_for_selector" => 900,
+        "wait_ms" => 650,
+        "assert_text" => 700,
+        "screenshot" => 800,
+        "scroll_to" => 850,
+        _ => 700,
     }
 }
 
@@ -269,8 +300,8 @@ fn transcode_output(
 
 #[cfg(test)]
 mod tests {
-    use super::build_web_manifest_preview;
-    use crate::execute::transcript::ExecutionTranscript;
+    use super::{build_web_manifest_preview, normalize_actions_for_render};
+    use crate::execute::transcript::{ExecutionTranscript, WebActionRecord};
 
     #[test]
     fn web_manifest_preview_has_core_fields() {
@@ -289,5 +320,55 @@ mod tests {
         assert_eq!(value["version"], "1");
         assert_eq!(value["fps"], 60);
         assert!(value["actions"].is_array());
+    }
+
+    #[test]
+    fn normalizes_web_action_timing_for_visibility() {
+        let actions = vec![
+            WebActionRecord {
+                id: "a".to_string(),
+                action_type: "click".to_string(),
+                status: "ok".to_string(),
+                error: None,
+                t_ms: 10,
+                duration_ms: 35,
+                selector: None,
+                cursor_x: None,
+                cursor_y: None,
+                target_x: None,
+                target_y: None,
+                target_w: None,
+                target_h: None,
+                screenshot_path: None,
+                page_url: None,
+                page_title: None,
+            },
+            WebActionRecord {
+                id: "b".to_string(),
+                action_type: "type".to_string(),
+                status: "ok".to_string(),
+                error: None,
+                t_ms: 20,
+                duration_ms: 80,
+                selector: None,
+                cursor_x: None,
+                cursor_y: None,
+                target_x: None,
+                target_y: None,
+                target_w: None,
+                target_h: None,
+                screenshot_path: None,
+                page_url: None,
+                page_title: None,
+            },
+        ];
+        let normalized = normalize_actions_for_render(&actions);
+        assert_eq!(normalized[0].t_ms, 10);
+        assert!(normalized[0].duration_ms >= 760);
+        assert_eq!(
+            normalized[1].t_ms,
+            normalized[0].t_ms + normalized[0].duration_ms
+        );
+        assert!(normalized[1].duration_ms >= 1_050);
     }
 }
