@@ -4,7 +4,6 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import Convert from 'ansi-to-html';
 
@@ -271,6 +270,29 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function mimeForPath(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  switch (ext) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.png':
+    default:
+      return 'image/png';
+  }
+}
+
+async function filePathToDataUrl(filePath) {
+  const abs = path.resolve(filePath);
+  const bytes = await fs.readFile(abs);
+  const mime = mimeForPath(abs);
+  return `data:${mime};base64,${bytes.toString('base64')}`;
+}
+
 async function normalizeOverlayEvents(rawEvents) {
   const normalized = [];
   for (const event of asArray(rawEvents)) {
@@ -278,10 +300,8 @@ async function normalizeOverlayEvents(rawEvents) {
     let imageUrl = null;
     const imagePath = typeof event.image_path === 'string' ? event.image_path.trim() : '';
     if (imagePath) {
-      const resolved = path.resolve(imagePath);
       try {
-        await fs.access(resolved);
-        imageUrl = pathToFileURL(resolved).href;
+        imageUrl = await filePathToDataUrl(imagePath);
       } catch {
         imageUrl = null;
       }

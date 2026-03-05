@@ -3,7 +3,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 function parseArgs(argv) {
@@ -33,6 +32,29 @@ function roundMs(value) {
 
 function num(value) {
   return Number.isFinite(value) ? value : 0;
+}
+
+function mimeForPath(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  switch (ext) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.png':
+    default:
+      return 'image/png';
+  }
+}
+
+async function filePathToDataUrl(filePath) {
+  const abs = path.resolve(filePath);
+  const bytes = await fs.readFile(abs);
+  const mime = mimeForPath(abs);
+  return `data:${mime};base64,${bytes.toString('base64')}`;
 }
 
 function softwareEncodeArgs({ fastMode, balancedQuality }) {
@@ -81,10 +103,8 @@ async function normalizeActions(rawActions) {
     let screenshotUrl = null;
     const screenshotPath = typeof action.screenshot_path === 'string' ? action.screenshot_path.trim() : '';
     if (screenshotPath) {
-      const resolved = path.resolve(screenshotPath);
       try {
-        await fs.access(resolved);
-        screenshotUrl = pathToFileURL(resolved).href;
+        screenshotUrl = await filePathToDataUrl(screenshotPath);
       } catch {
         screenshotUrl = null;
       }
