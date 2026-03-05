@@ -15,6 +15,28 @@ pub fn contract_json() -> Value {
         "version": "1",
         "command": "castkit schema --json"
       },
+      "script_mode_support": {
+        "default_mode": "terminal",
+        "modes": ["terminal", "web"],
+        "terminal": {
+          "step_artifacts": ["image", "result_card", "web_snapshot", "chart"],
+          "note": "image and result_card are executable in current release; others may be validator-accepted but execution-gated."
+        },
+        "web": {
+          "required_block": "web",
+          "actions": [
+            "goto",
+            "click",
+            "type",
+            "press",
+            "wait_for_selector",
+            "wait_ms",
+            "assert_text",
+            "screenshot",
+            "scroll_to"
+          ]
+        }
+      },
       "bootstrap": [
         {
           "step": "load_contract",
@@ -37,7 +59,8 @@ pub fn contract_json() -> Value {
         "Every executable step must include non-empty source_refs from active session.",
         "Run validate before execute.",
         "Use non-interactive execution for deterministic runs.",
-        "Bootstrap commands (agent contract/schema) are for planning context, not showcase scene output."
+        "Bootstrap commands (agent contract/schema) are for planning context, not showcase scene output.",
+        "For mode=web, every action must carry non-empty source_refs."
       ],
       "runtime_env": {
         "always_set": ["SESSION", "CASTKIT_SESSION"],
@@ -115,6 +138,7 @@ mod tests {
         assert!(contract["required_flow"].is_array());
         assert!(contract["completion_contract"].is_object());
         assert!(contract["scenario_playbook"].is_object());
+        assert!(contract["script_mode_support"].is_object());
     }
 
     #[test]

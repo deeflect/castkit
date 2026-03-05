@@ -405,7 +405,9 @@ fn is_safe_relative_path(path: &str) -> bool {
     if parsed.is_absolute() {
         return false;
     }
-    !parsed.components().any(|c| matches!(c, Component::ParentDir))
+    !parsed
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
 }
 
 fn require_non_empty(
@@ -415,7 +417,7 @@ fn require_non_empty(
     message: &str,
     errors: &mut Vec<ValidationError>,
 ) {
-    if value.is_none_or(|v| v.trim().is_empty()) {
+    if value.map(|v| v.trim().is_empty()).unwrap_or(true) {
         errors.push(err(code, path, message, None));
     }
 }

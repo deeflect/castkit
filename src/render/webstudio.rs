@@ -26,8 +26,16 @@ struct WebRenderManifest {
     actions: Vec<WebActionRecord>,
 }
 
-pub fn render_webstudio(transcript: &ExecutionTranscript, opts: RenderOptions) -> Result<RenderArtifacts> {
-    let manifest = build_web_manifest(transcript, opts.fps.max(24), opts.no_zoom, opts.branding.clone());
+pub fn render_webstudio(
+    transcript: &ExecutionTranscript,
+    opts: RenderOptions,
+) -> Result<RenderArtifacts> {
+    let manifest = build_web_manifest(
+        transcript,
+        opts.fps.max(24),
+        opts.no_zoom,
+        opts.branding.clone(),
+    );
     let manifest_path = std::env::temp_dir().join(format!(
         "castkit-web-render-manifest-{}.json",
         uuid::Uuid::new_v4().simple()
@@ -85,7 +93,12 @@ fn build_web_manifest(
     actions.sort_by_key(|action| action.t_ms);
     let duration_ms = actions
         .iter()
-        .map(|action| action.t_ms.saturating_add(action.duration_ms).saturating_add(900))
+        .map(|action| {
+            action
+                .t_ms
+                .saturating_add(action.duration_ms)
+                .saturating_add(900)
+        })
         .max()
         .unwrap_or(3_500)
         .max(3_500);
@@ -102,7 +115,11 @@ fn build_web_manifest(
     }
 }
 
-pub fn build_web_manifest_preview(transcript: &ExecutionTranscript, fps: u32, no_zoom: bool) -> serde_json::Value {
+pub fn build_web_manifest_preview(
+    transcript: &ExecutionTranscript,
+    fps: u32,
+    no_zoom: bool,
+) -> serde_json::Value {
     serde_json::to_value(build_web_manifest(transcript, fps.max(24), no_zoom, None))
         .unwrap_or_else(|_| json!({ "actions": [] }))
 }
@@ -147,7 +164,9 @@ fn run_playwright_web_renderer(
         );
     }
 
-    let output = command.output().context("failed to run web node renderer")?;
+    let output = command
+        .output()
+        .context("failed to run web node renderer")?;
     if !output.status.success() {
         anyhow::bail!(
             "web node renderer failed:\nstdout:\n{}\nstderr:\n{}",
@@ -197,11 +216,7 @@ fn transcode_output(
 
     match format {
         RenderOutputFormat::Mp4 => {
-            args.extend([
-                "-c:v".to_string(),
-                "copy".to_string(),
-                "-an".to_string(),
-            ]);
+            args.extend(["-c:v".to_string(), "copy".to_string(), "-an".to_string()]);
         }
         RenderOutputFormat::Webm => {
             args.extend([

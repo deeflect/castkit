@@ -31,7 +31,7 @@
 
 ## What is castkit?
 
-Point castkit at any CLI binary. It auto-discovers help text, README, and file structure — then generates a polished terminal demo video with typed commands, streamed output, camera motion, branding, and typing sounds.
+Point castkit at any CLI binary. It auto-discovers help text, README, and file structure — then generates polished demos in either terminal mode or web mode with typed commands/actions, camera motion, branding, and optional typing sounds.
 
 Built for AI agents, works for humans.
 
@@ -48,7 +48,9 @@ castkit execute --session $SESSION --script demo.json --non-interactive --preset
 - 🔍 **Auto-discovery** — Extracts help text, README, file structure, and probes to build an evidence graph
 - 🛡️ **Evidence-first** — Every demo step requires `source_refs` from real discovery. No invented commands
 - ✅ **Strict validation** — Rejects scripts with unknown commands, missing refs, or invalid patterns
-- 🎬 **ScreenStudio-quality rendering** — Auto camera zoom, cursor tracking, crossfade transitions, typing sounds
+- 🎬 **ScreenStudio-quality rendering** — Auto camera zoom, cursor tracking, crossfade transitions
+- 🖼️ **Overlay artifacts** — Image and result-card overlays declared directly in `script.steps[].artifacts`
+- 🌐 **Web mode** — Deterministic `goto/click/type/assert/screenshot` action scripts with focus zoom
 - 🎨 **Branding** — Intro/outro cards, watermark, avatar, custom color themes
 - 🔒 **Auto-redaction** — Built-in secret detection (API keys, tokens, paths) with configurable patterns
 - 🤖 **Agent-native** — Deterministic non-interactive mode with JSON I/O for any coding agent
@@ -90,6 +92,23 @@ castkit validate --session $SESSION --script demo-script.json --json
 # 4. Render the video
 castkit execute --session $SESSION --script demo-script.json \
   --non-interactive --preset polished --output demo.mp4
+```
+
+### Script Modes
+
+- Terminal mode with overlays:
+  `examples/demo-script.terminal-overlay.json`
+- Web mode:
+  `examples/demo-script.web.json`
+
+```bash
+# Terminal mode
+castkit execute --session $SESSION --script examples/demo-script.terminal-overlay.json \
+  --non-interactive --preset polished --output demo-terminal.mp4 --json
+
+# Web mode
+castkit execute --session $SESSION --script examples/demo-script.web.json \
+  --non-interactive --preset polished --output demo-web.mp4 --json
 ```
 
 ## Agent Flow
@@ -193,6 +212,8 @@ Every script is validated before execution:
 - Unknown commands fail unless marked `manual_step=true` with a `manual_reason`
 - Invalid redaction regex patterns are caught
 - Built-in secret redaction is always applied
+- Overlay artifact paths must be safe relative paths
+- `mode=web` requires a valid `web.actions[]` block with evidence-backed actions
 
 ## Project Structure
 
@@ -205,7 +226,9 @@ castkit/
 │   ├── validate/           # Script validation engine
 │   └── plan/               # Script scaffold generation
 ├── renderer-runtime/       # Node.js ScreenStudio-style renderer
-│   └── render.mjs          # Playwright-based frame capture + ffmpeg encode
+│   ├── render.mjs          # Terminal renderer
+│   ├── web-runner.mjs      # Deterministic Playwright action executor
+│   └── render-web.mjs      # Web-mode renderer
 ├── examples/               # Demo scripts, branding presets, sample videos
 ├── AGENTS.md               # Full agent contract + scenario design playbook
 └── SPEC.md                 # Technical specification

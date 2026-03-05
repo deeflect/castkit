@@ -69,5 +69,7 @@ fn execute_artifacts_missing_image_file_fails() {
     };
 
     let err = capture_artifacts(&step, dir.path(), &ok_record(), 0).expect_err("must fail");
-    assert!(err.to_string().contains("artifact image file missing or unreadable"));
+    assert!(err
+        .to_string()
+        .contains("artifact image file missing or unreadable"));
 }

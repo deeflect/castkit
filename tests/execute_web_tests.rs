@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use castkit::cli::{ExecuteArgs, KeystrokeProfile, OutputFormat, RenderSpeed};
 use castkit::execute;
@@ -7,9 +6,6 @@ use castkit::handoff::session_store::save_session;
 use castkit::handoff::types::{HandoffSession, RefItem, RefMetadata, SourceSummary};
 use castkit::script::parse_script;
 use chrono::Utc;
-use once_cell::sync::Lazy;
-
-static ENV_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 fn seed_session(session_id: &str) {
     let session = HandoffSession {
@@ -39,7 +35,6 @@ fn seed_session(session_id: &str) {
 
 #[tokio::test]
 async fn execute_web_mode_dispatches_to_web_runner() {
-    let _guard = ENV_LOCK.lock().expect("lock");
     std::env::set_var("CASTKIT_WEB_RUNNER_STUB", "1");
     std::env::set_var("CASTKIT_SKIP_RENDER", "1");
 

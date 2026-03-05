@@ -32,9 +32,17 @@ castkit is an agent-native CLI that converts verified terminal workflows into po
 - ffmpeg
 
 ## Current v1 Scope
-- Terminal-only capture style
+- Terminal mode with artifact overlays (image/result-card)
+- Web mode with deterministic browser actions and focus zoom renderer
 - MP4/WebM/GIF output with optional audio mix
 - Configurable branding, avatar chip, watermark, scene tags
+
+## Planned Next Scope
+- Additional artifact types: `web_snapshot` and `chart`.
+- Extended web actions and richer composited overlays/charts.
+- Design and roadmap:
+  - `docs/plans/2026-03-05-overlays-web-mode-design.md`
+  - `docs/plans/2026-03-05-overlays-web-mode-implementation-plan.md`
 
 ## Timing and Scheduling Guidance
 - Poll interval during execute: every `20s`.

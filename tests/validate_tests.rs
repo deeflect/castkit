@@ -244,7 +244,10 @@ fn validate_fails_artifact_duration_out_of_range() {
 
     let res = validate_script(&session_id, &script).expect("validate");
     assert!(!res.ok);
-    assert!(res.errors.iter().any(|e| e.code == "ARTIFACT_SHOW_MS_RANGE"));
+    assert!(res
+        .errors
+        .iter()
+        .any(|e| e.code == "ARTIFACT_SHOW_MS_RANGE"));
 }
 
 #[test]

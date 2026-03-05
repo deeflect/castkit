@@ -84,7 +84,10 @@ fn stage_file(cwd: &Path, rel_path: &str) -> Result<PathBuf> {
     let meta = fs::metadata(&source_path)
         .with_context(|| format!("unable to stat {}", source_path.display()))?;
     if !meta.is_file() {
-        anyhow::bail!("artifact path is not a regular file: {}", source_path.display());
+        anyhow::bail!(
+            "artifact path is not a regular file: {}",
+            source_path.display()
+        );
     }
 
     let extension = source_path
@@ -192,6 +195,8 @@ mod tests {
             })],
         };
         let err = capture_artifacts(&step, dir.path(), &ok_record(), 0).expect_err("must fail");
-        assert!(err.to_string().contains("artifact image file missing or unreadable"));
+        assert!(err
+            .to_string()
+            .contains("artifact image file missing or unreadable"));
     }
 }

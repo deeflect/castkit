@@ -322,6 +322,7 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_group(
     cwd: &std::path::Path,
     steps: &[ScriptStep],

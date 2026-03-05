@@ -3,7 +3,12 @@
 This file defines how an LLM agent should use castkit in non-interactive mode.
 
 ## Goal
-Produce a polished terminal demo video from evidence-backed steps, with no invented commands.
+Produce a polished demo video (terminal or web mode) from evidence-backed steps, with no invented commands.
+
+## Mode Capabilities
+- `mode: "terminal"`: command-driven scenes with optional `artifacts` overlays.
+- `mode: "web"`: deterministic browser action timeline in `web.actions`.
+- If `mode` is omitted, castkit defaults to `terminal`.
 
 ## Hard Rules
 - Never invent executable commands, flags, file paths, or setup steps.
@@ -12,6 +17,7 @@ Produce a polished terminal demo video from evidence-backed steps, with no inven
 - Prefer `manual_step=true` only when no runnable command exists in evidence.
 - Keep output deterministic: non-interactive only (`--non-interactive`).
 - Treat bootstrap contract/schema commands as planning context, not main demo scenes.
+- For `mode=web`, every action must include non-empty `source_refs`.
 
 ## Bootstrap First (required)
 Do this before generating or validating any script:
@@ -75,6 +81,7 @@ Return script as raw JSON only (no markdown), strictly matching the schema below
 ```json
 {
   "version": "1",
+  "mode": "terminal",
   "setup": [
     {
       "id": "setup_01",
@@ -87,7 +94,18 @@ Return script as raw JSON only (no markdown), strictly matching the schema below
       "timeout_ms": 120000,
       "source_refs": ["ref_help_0001"],
       "manual_step": false,
-      "manual_reason": null
+      "manual_reason": null,
+      "artifacts": [
+        {
+          "type": "result_card",
+          "title": "Setup status",
+          "position": "top_right",
+          "show_ms": 1800,
+          "items": [
+            { "label": "Config", "value": "ready" }
+          ]
+        }
+      ]
     }
   ],
   "scenes": [
@@ -106,7 +124,8 @@ Return script as raw JSON only (no markdown), strictly matching the schema below
           "timeout_ms": 120000,
           "source_refs": ["ref_readme_0003"],
           "manual_step": false,
-          "manual_reason": null
+          "manual_reason": null,
+          "artifacts": []
         }
       ]
     }
@@ -121,9 +140,27 @@ Return script as raw JSON only (no markdown), strictly matching the schema below
   "branding": {
     "title": "castkit demo",
     "watermark_text": "castkit.com"
+  },
+  "web": {
+    "base_url": "https://example.com",
+    "viewport": { "width": 1440, "height": 900 },
+    "actions": [
+      { "id": "open", "type": "goto", "url": "/", "source_refs": ["ref_files_0001"] },
+      { "id": "click_cta", "type": "click", "selector": "[data-demo=cta]", "source_refs": ["ref_files_0002"] },
+      { "id": "assert", "type": "assert_text", "text": "Welcome", "source_refs": ["ref_files_0003"] }
+    ]
   }
 }
 ```
+
+## Mode-Specific Writing Guidance
+- Terminal mode:
+  - Use `artifacts` for visual payoff (image/result_card) when a step produces a meaningful output.
+  - Keep overlays short (`show_ms` around 1200-2600) and positioned to avoid obscuring active typing lines.
+- Web mode:
+  - Prefer stable selectors (`data-*` attributes) over brittle CSS chains.
+  - Keep actions explicit and small (`goto -> wait/click/type -> assert -> screenshot`).
+  - Use at least one `assert_text` action before final screenshot.
 
 ## Scenario Quality Rubric
 - Scene progression should tell a product story, not just `--help` output.
