@@ -1008,10 +1008,12 @@ mod tests {
         let transcript = ExecutionTranscript {
             session_id: "sess_1".to_string(),
             started_at: chrono::Utc::now(),
+            mode: crate::script::DemoMode::Terminal,
             setup: vec![],
             checks: vec![],
             cleanup: vec![],
             scenes: vec![],
+            overlay_events: vec![],
         };
         let (snapshots, _, _, duration) = build_timeline(&transcript);
         assert!(!snapshots.is_empty());

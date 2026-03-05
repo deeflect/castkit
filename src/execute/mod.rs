@@ -1,3 +1,4 @@
+pub mod artifacts;
 pub mod redact;
 pub mod runner;
 pub mod transcript;
@@ -26,7 +27,8 @@ use crate::validate::{validate_script, ValidationError, ValidationResult};
 
 use self::redact::Redactor;
 use self::runner::run_step;
-use self::transcript::{ExecutionTranscript, SceneTranscript, StepRunRecord};
+use self::transcript::{ExecutionTranscript, OverlayEvent, SceneTranscript, StepRunRecord};
+use self::artifacts::capture_artifacts;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ExecuteResponse {
@@ -120,12 +122,15 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
     let mut transcript = ExecutionTranscript {
         session_id: args.session.clone(),
         started_at: Utc::now(),
+        mode: script.mode,
         setup: Vec::new(),
         checks: Vec::new(),
         scenes: Vec::new(),
         cleanup: Vec::new(),
+        overlay_events: Vec::new(),
     };
     let mut runtime_env = RuntimeEnv::with_session(&args.session);
+    let mut timeline_ms = 0u64;
 
     let mut failures = Vec::new();
 
@@ -135,6 +140,8 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         "setup",
         &mut runtime_env,
         &mut transcript.setup,
+        &mut transcript.overlay_events,
+        &mut timeline_ms,
         &mut failures,
         &redactor,
     )
@@ -146,6 +153,8 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         "checks",
         &mut runtime_env,
         &mut transcript.checks,
+        &mut transcript.overlay_events,
+        &mut timeline_ms,
         &mut failures,
         &redactor,
     )
@@ -164,6 +173,8 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
             &format!("scenes[{scene_idx}].steps"),
             &mut runtime_env,
             &mut scene_transcript.steps,
+            &mut transcript.overlay_events,
+            &mut timeline_ms,
             &mut failures,
             &redactor,
         )
@@ -178,6 +189,8 @@ pub async fn execute(args: ExecuteArgs, script: DemoScript) -> Result<ExecuteRes
         "cleanup",
         &mut runtime_env,
         &mut transcript.cleanup,
+        &mut transcript.overlay_events,
+        &mut timeline_ms,
         &mut failures,
         &redactor,
     )
@@ -265,6 +278,8 @@ async fn execute_group(
     group: &str,
     runtime_env: &mut RuntimeEnv,
     out: &mut Vec<StepRunRecord>,
+    overlay_events: &mut Vec<OverlayEvent>,
+    timeline_ms: &mut u64,
     failures: &mut Vec<ExecutionFailure>,
     redactor: &Redactor,
 ) {
@@ -276,6 +291,7 @@ async fn execute_group(
         let path = format!("{group}[{idx}]");
         match run_step(cwd, step, runtime_env.vars()).await {
             Ok(record_raw) => {
+                let step_elapsed_ms = record_raw.duration_ms as u64;
                 if record_raw.status == "ok" {
                     runtime_env.absorb_step_output(&record_raw);
                 }
@@ -283,8 +299,23 @@ async fn execute_group(
                 let has_expected_exit = step.expect.as_ref().and_then(|e| e.exit_code).is_some();
                 let failed = expectation_error.is_some()
                     || (!has_expected_exit && record_raw.status != "ok");
-                let record = redactor.redact_record(record_raw);
+                let record = redactor.redact_record(record_raw.clone());
                 out.push(record.clone());
+                if !failed && record_raw.status == "ok" && !step.artifacts.is_empty() {
+                    let artifact_t_ms = (*timeline_ms).saturating_add(step_elapsed_ms);
+                    match capture_artifacts(step, cwd, &record_raw, artifact_t_ms) {
+                        Ok(events) => overlay_events.extend(events),
+                        Err(err) => {
+                            failures.push(ExecutionFailure {
+                                step_path: path,
+                                reason: redactor.redact_text(&err.to_string()),
+                                record,
+                            });
+                            break;
+                        }
+                    }
+                }
+                *timeline_ms = (*timeline_ms).saturating_add(step_elapsed_ms + 120);
                 if failed {
                     failures.push(ExecutionFailure {
                         step_path: path,
@@ -314,6 +345,7 @@ async fn execute_group(
                     reason: redactor.redact_text(&err.to_string()),
                     record,
                 });
+                *timeline_ms = (*timeline_ms).saturating_add(120);
                 break;
             }
         }
