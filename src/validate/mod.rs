@@ -1,13 +1,14 @@
 pub mod errors;
 
 use std::collections::BTreeSet;
+use std::path::{Component, Path};
 
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::handoff::session_store::load_session;
-use crate::script::{DemoScript, ScriptStep};
+use crate::script::{DemoMode, DemoScript, ScriptStep, StepArtifact, WebAction, WebActionType};
 
 pub use errors::{ValidationError, ValidationResult};
 
@@ -61,6 +62,15 @@ pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<Validati
         false,
     );
 
+    if matches!(script.mode, DemoMode::Terminal) && script.web.is_some() {
+        errors.push(err(
+            "UNEXPECTED_WEB_CONFIG",
+            "web",
+            "web config is only allowed when mode='web'",
+            Some("set mode to 'web' or remove web block"),
+        ));
+    }
+
     let setup_has_dotenv = script.setup.iter().any(step_creates_dotenv);
     let setup_has_config = script.setup.iter().any(step_creates_config);
 
@@ -99,6 +109,10 @@ pub fn validate_script(session_id: &str, script: &DemoScript) -> Result<Validati
         !setup_has_dotenv,
         !setup_has_config,
     );
+
+    if matches!(script.mode, DemoMode::Web) {
+        validate_web_mode(script, &known_refs, &mut errors);
+    }
 
     Ok(ValidationResult::from_errors(errors))
 }
@@ -190,6 +204,219 @@ fn validate_steps(
                 Some("add redaction patterns or avoid inline secret literals"),
             ));
         }
+
+        validate_artifacts(step, &path, errors);
+    }
+}
+
+fn validate_web_mode(
+    script: &DemoScript,
+    known_refs: &BTreeSet<&str>,
+    errors: &mut Vec<ValidationError>,
+) {
+    let Some(web) = script.web.as_ref() else {
+        errors.push(err(
+            "WEB_CONFIG_REQUIRED",
+            "web",
+            "mode='web' requires a web config block",
+            Some("set script.web with non-empty actions"),
+        ));
+        return;
+    };
+
+    if web.actions.is_empty() {
+        errors.push(err(
+            "WEB_ACTIONS_REQUIRED",
+            "web.actions",
+            "mode='web' requires at least one web action",
+            Some("add deterministic actions like goto/click/type/assert_text"),
+        ));
+        return;
+    }
+
+    for (idx, action) in web.actions.iter().enumerate() {
+        let path = format!("web.actions[{idx}]");
+        validate_web_action(action, &path, known_refs, errors);
+    }
+}
+
+fn validate_web_action(
+    action: &WebAction,
+    path: &str,
+    known_refs: &BTreeSet<&str>,
+    errors: &mut Vec<ValidationError>,
+) {
+    if action.source_refs.is_empty() {
+        errors.push(err(
+            "MISSING_SOURCE_REFS",
+            path,
+            "web action must include at least one source_ref",
+            None,
+        ));
+    }
+
+    for source_ref in &action.source_refs {
+        if !known_refs.contains(source_ref.as_str()) {
+            errors.push(err(
+                "INVALID_SOURCE_REF",
+                path,
+                &format!("source_ref '{source_ref}' not found in session"),
+                None,
+            ));
+        }
+    }
+
+    match action.action_type {
+        WebActionType::Goto => require_non_empty(
+            action.url.as_deref(),
+            "WEB_URL_REQUIRED",
+            &format!("{path}.url"),
+            "goto action requires non-empty url",
+            errors,
+        ),
+        WebActionType::Click | WebActionType::WaitForSelector | WebActionType::ScrollTo => {
+            require_non_empty(
+                action.selector.as_deref(),
+                "WEB_SELECTOR_REQUIRED",
+                &format!("{path}.selector"),
+                "action requires non-empty selector",
+                errors,
+            );
+        }
+        WebActionType::Type => {
+            require_non_empty(
+                action.selector.as_deref(),
+                "WEB_SELECTOR_REQUIRED",
+                &format!("{path}.selector"),
+                "type action requires non-empty selector",
+                errors,
+            );
+            require_non_empty(
+                action.text.as_deref(),
+                "WEB_TEXT_REQUIRED",
+                &format!("{path}.text"),
+                "type action requires non-empty text",
+                errors,
+            );
+        }
+        WebActionType::Press => {
+            require_non_empty(
+                action.key.as_deref(),
+                "WEB_KEY_REQUIRED",
+                &format!("{path}.key"),
+                "press action requires non-empty key",
+                errors,
+            );
+        }
+        WebActionType::WaitMs => {
+            if action.wait_ms.unwrap_or(0) < 1 {
+                errors.push(err(
+                    "WEB_WAIT_MS_REQUIRED",
+                    &format!("{path}.wait_ms"),
+                    "wait_ms action requires wait_ms >= 1",
+                    None,
+                ));
+            }
+        }
+        WebActionType::AssertText => {
+            require_non_empty(
+                action.text.as_deref(),
+                "WEB_TEXT_REQUIRED",
+                &format!("{path}.text"),
+                "assert_text action requires non-empty text",
+                errors,
+            );
+        }
+        WebActionType::Screenshot => {
+            require_non_empty(
+                action.path.as_deref(),
+                "WEB_PATH_REQUIRED",
+                &format!("{path}.path"),
+                "screenshot action requires non-empty path",
+                errors,
+            );
+        }
+    }
+}
+
+fn validate_artifacts(step: &ScriptStep, step_path: &str, errors: &mut Vec<ValidationError>) {
+    for (idx, artifact) in step.artifacts.iter().enumerate() {
+        let path = format!("{step_path}.artifacts[{idx}]");
+        let display = match artifact {
+            StepArtifact::Image(v) => {
+                validate_relative_path("ARTIFACT_PATH_UNSAFE", &path, "path", &v.path, errors);
+                &v.display
+            }
+            StepArtifact::WebSnapshot(v) => {
+                if let Some(p) = &v.path {
+                    validate_relative_path("ARTIFACT_PATH_UNSAFE", &path, "path", p, errors);
+                }
+                &v.display
+            }
+            StepArtifact::ResultCard(v) => &v.display,
+            StepArtifact::Chart(v) => {
+                validate_relative_path(
+                    "ARTIFACT_PATH_UNSAFE",
+                    &path,
+                    "data_path",
+                    &v.data_path,
+                    errors,
+                );
+                &v.display
+            }
+        };
+
+        if let Some(ms) = display.show_ms {
+            if !(300..=10_000).contains(&ms) {
+                errors.push(err(
+                    "ARTIFACT_SHOW_MS_RANGE",
+                    &format!("{path}.show_ms"),
+                    "artifact show_ms must be between 300 and 10000",
+                    None,
+                ));
+            }
+        }
+    }
+}
+
+fn validate_relative_path(
+    code: &str,
+    parent: &str,
+    key: &str,
+    value: &str,
+    errors: &mut Vec<ValidationError>,
+) {
+    if !is_safe_relative_path(value) {
+        errors.push(err(
+            code,
+            &format!("{parent}.{key}"),
+            "path must be a safe relative path inside sandbox",
+            Some("use a relative path without '..' segments"),
+        ));
+    }
+}
+
+fn is_safe_relative_path(path: &str) -> bool {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let parsed = Path::new(trimmed);
+    if parsed.is_absolute() {
+        return false;
+    }
+    !parsed.components().any(|c| matches!(c, Component::ParentDir))
+}
+
+fn require_non_empty(
+    value: Option<&str>,
+    code: &str,
+    path: &str,
+    message: &str,
+    errors: &mut Vec<ValidationError>,
+) {
+    if value.is_none_or(|v| v.trim().is_empty()) {
+        errors.push(err(code, path, message, None));
     }
 }
 

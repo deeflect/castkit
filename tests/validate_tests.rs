@@ -198,3 +198,103 @@ fn validate_allows_env_prefix_before_known_command() {
         res.errors
     );
 }
+
+#[test]
+fn validate_fails_artifact_absolute_path() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "mode":"terminal",
+      "setup":[],
+      "scenes":[{"id":"s1","title":"t","steps":[{"id":"a","run":"mycli run","source_refs":["ref_help_0001"],"artifacts":[{"type":"image","path":"/tmp/qr.png"}]}]}],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(!res.ok);
+    assert!(res.errors.iter().any(|e| e.code == "ARTIFACT_PATH_UNSAFE"));
+}
+
+#[test]
+fn validate_fails_artifact_duration_out_of_range() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "mode":"terminal",
+      "setup":[],
+      "scenes":[{"id":"s1","title":"t","steps":[{"id":"a","run":"mycli run","source_refs":["ref_help_0001"],"artifacts":[{"type":"image","path":"out/qr.png","show_ms":100}]}]}],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(!res.ok);
+    assert!(res.errors.iter().any(|e| e.code == "ARTIFACT_SHOW_MS_RANGE"));
+}
+
+#[test]
+fn validate_fails_web_mode_without_web_block() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "mode":"web",
+      "setup":[],
+      "scenes":[],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(!res.ok);
+    assert!(res.errors.iter().any(|e| e.code == "WEB_CONFIG_REQUIRED"));
+}
+
+#[test]
+fn validate_fails_web_action_missing_selector() {
+    let session_id = format!("sess_test_{}", uuid::Uuid::new_v4().simple());
+    seed_session(&session_id);
+
+    let script = parse_script(
+        r#"{
+      "version":"1",
+      "mode":"web",
+      "setup":[],
+      "scenes":[],
+      "checks":[],
+      "cleanup":[],
+      "redactions":[],
+      "audio":null,
+      "web":{
+        "base_url":"https://example.com",
+        "actions":[{"id":"a1","type":"click","source_refs":["ref_help_0001"]}]
+      }
+    }"#,
+    )
+    .expect("parse");
+
+    let res = validate_script(&session_id, &script).expect("validate");
+    assert!(!res.ok);
+    assert!(res.errors.iter().any(|e| e.code == "WEB_SELECTOR_REQUIRED"));
+}
