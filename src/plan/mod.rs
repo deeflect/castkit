@@ -7,7 +7,7 @@ use serde::Serialize;
 use crate::branding::BrandingConfig;
 use crate::cli::PlanScaffoldArgs;
 use crate::handoff::session_store::load_session;
-use crate::script::{AudioConfig, DemoScript, ExpectCondition, ScriptScene, ScriptStep};
+use crate::script::{AudioConfig, DemoMode, DemoScript, ExpectCondition, ScriptScene, ScriptStep};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ScaffoldResponse {
@@ -88,6 +88,7 @@ pub fn scaffold(args: PlanScaffoldArgs) -> Result<ScaffoldResponse> {
 
     let script = DemoScript {
         version: "1".to_string(),
+        mode: DemoMode::Terminal,
         setup,
         scenes,
         checks,
@@ -102,6 +103,7 @@ pub fn scaffold(args: PlanScaffoldArgs) -> Result<ScaffoldResponse> {
             watermark_text: Some("castkit.com".to_string()),
             ..BrandingConfig::default()
         }),
+        web: None,
     };
 
     let body = serde_json::to_string_pretty(&script)?;
@@ -135,6 +137,7 @@ fn make_step(
         source_refs: vec![source_ref.to_string()],
         manual_step: false,
         manual_reason: None,
+        artifacts: Vec::new(),
     }
 }
 

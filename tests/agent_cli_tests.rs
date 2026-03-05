@@ -43,4 +43,14 @@ fn schema_json_is_available() {
     let parsed: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
     assert_eq!(parsed["title"], "DemoScript");
     assert!(parsed["$defs"]["script_step"].is_object());
+    assert_eq!(parsed["properties"]["mode"]["default"], "terminal");
+    assert!(parsed["$defs"]["step_artifact"].is_object());
+    assert!(parsed["$defs"]["web_config"].is_object());
+    assert!(parsed["$defs"]["web_action"].is_object());
+    assert_eq!(
+        parsed["$defs"]["web_action"]["properties"]["type"]["enum"]
+            .as_array()
+            .map(|v| v.len()),
+        Some(9)
+    );
 }

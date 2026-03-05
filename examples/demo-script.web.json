@@ -1,0 +1,47 @@
+{
+  "version": "1",
+  "mode": "web",
+  "setup": [],
+  "scenes": [],
+  "checks": [],
+  "cleanup": [],
+  "redactions": [],
+  "audio": {
+    "typing": true,
+    "music_path": null
+  },
+  "branding": null,
+  "web": {
+    "base_url": "https://example.com",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "actions": [
+      {
+        "id": "open_home",
+        "type": "goto",
+        "url": "/",
+        "source_refs": ["ref_files_0001"]
+      },
+      {
+        "id": "click_more",
+        "type": "click",
+        "selector": "a",
+        "source_refs": ["ref_files_0002"]
+      },
+      {
+        "id": "assert_copy",
+        "type": "assert_text",
+        "text": "Example Domain",
+        "source_refs": ["ref_readme_0001"]
+      },
+      {
+        "id": "snap_final",
+        "type": "screenshot",
+        "path": "out/web-final.png",
+        "source_refs": ["ref_files_0003"]
+      }
+    ]
+  }
+}

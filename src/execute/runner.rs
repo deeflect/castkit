@@ -81,6 +81,7 @@ mod tests {
             source_refs: vec!["ref_help_0001".to_string()],
             manual_step: false,
             manual_reason: None,
+            artifacts: Vec::new(),
         };
         let mut env_vars = BTreeMap::new();
         env_vars.insert("SESSION".to_string(), "sess_env_test".to_string());

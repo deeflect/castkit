@@ -1,0 +1,54 @@
+{
+  "version": "1",
+  "mode": "terminal",
+  "setup": [
+    {
+      "id": "seed_results",
+      "run": "mkdir -p out && printf 'https://castkit.com/share/demo\\n' > out/url.txt",
+      "source_refs": ["ref_help_0001"],
+      "artifacts": [
+        {
+          "type": "result_card",
+          "title": "Prepared",
+          "position": "top_right",
+          "show_ms": 1600,
+          "items": [
+            { "label": "Status", "value": "ready" },
+            { "label": "Output", "value": "out/url.txt" }
+          ]
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "qr_flow",
+      "title": "Generate and Show Artifact",
+      "steps": [
+        {
+          "id": "make_qr",
+          "run": "qrencode -o out/qr.png 'https://castkit.com/share/demo' || true",
+          "source_refs": ["ref_help_0002"],
+          "artifacts": [
+            {
+              "type": "image",
+              "path": "out/qr.png",
+              "title": "Share QR",
+              "position": "bottom_right",
+              "show_ms": 2400,
+              "enter": "slide"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "checks": [],
+  "cleanup": [],
+  "redactions": [],
+  "audio": {
+    "typing": true,
+    "music_path": null
+  },
+  "branding": null
+}
