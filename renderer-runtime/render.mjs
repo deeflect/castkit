@@ -730,6 +730,10 @@ async function main() {
       .replaceAll("'", '&#39;');
   }
 
+  function num(value) {
+    return Number.isFinite(value) ? value : 0;
+  }
+
   function overlayPosition(position) {
     switch (position) {
       case 'top_left':
