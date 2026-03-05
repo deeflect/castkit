@@ -382,13 +382,12 @@ async function main() {
   }
   #shot {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    left: 0;
+    top: 0;
     background: rgba(8, 14, 24, 0.82);
     opacity: 0;
     transition: opacity 120ms linear;
+    will-change: transform, width, height;
   }
   #placeholder {
     position: absolute;
@@ -515,12 +514,18 @@ async function main() {
     zoom: 1,
     cameraX: 0,
     cameraY: 0,
+    cursorX: 720,
+    cursorY: 420,
+    cursorReady: false,
     init(manifest) {
       this.manifest = manifest || {};
       this.idx = 0;
       this.zoom = 1;
       this.cameraX = 0;
       this.cameraY = 0;
+      this.cursorX = 720;
+      this.cursorY = 420;
+      this.cursorReady = false;
       const branding = manifest.branding || {};
       if (typeof branding.title === 'string' && branding.title.trim()) {
         document.getElementById('title').textContent = branding.title.trim();
@@ -541,7 +546,6 @@ async function main() {
         this.idx += 1;
       }
       const action = actions[Math.min(this.idx, Math.max(0, actions.length - 1))] || null;
-      const nextAction = actions[Math.min(this.idx + 1, Math.max(0, actions.length - 1))] || action;
 
       const pageEl = document.getElementById('page');
       const shotEl = document.getElementById('shot');
@@ -587,16 +591,21 @@ async function main() {
       tabTitleEl.textContent = currentTitle || niceUrl(currentUrl);
 
       const actionStart = action ? num(action.t_ms) : 0;
-      const nextStart = nextAction ? num(nextAction.t_ms) : actionStart + 240;
-      const span = Math.max(1, nextStart - actionStart);
-      const alpha = clamp((tMs - actionStart) / span, 0, 1);
+      const actionType = String(action?.action_type || '');
 
-      const curX = num(action?.cursor_x || 720);
-      const curY = num(action?.cursor_y || 420);
-      const nextX = num(nextAction?.cursor_x || curX);
-      const nextY = num(nextAction?.cursor_y || curY);
-      const cursorX = curX + ((nextX - curX) * alpha);
-      const cursorY = curY + ((nextY - curY) * alpha);
+      const targetCursorX = num(action?.cursor_x || 720);
+      const targetCursorY = num(action?.cursor_y || 420);
+      this.cursorX = targetCursorX;
+      this.cursorY = targetCursorY;
+      this.cursorReady = true;
+      const cursorX = this.cursorX;
+      const cursorY = this.cursorY;
+
+      const rawFocusW = num(action?.target_w || 0);
+      const rawFocusH = num(action?.target_h || 0);
+      const rawFocusX = num(action?.target_x || 0);
+      const rawFocusY = num(action?.target_y || 0);
+      const hasRawFocus = rawFocusW > 0 && rawFocusH > 0;
 
       const sourceW = Math.max(1, num(shotEl.naturalWidth || 1440));
       const sourceH = Math.max(1, num(shotEl.naturalHeight || 900));
@@ -606,51 +615,89 @@ async function main() {
       const drawH = sourceH * fitScale;
       const drawOffsetX = (pageRect.width - drawW) * 0.5;
       const drawOffsetY = (pageRect.height - drawH) * 0.5;
+      shotEl.style.left = drawOffsetX.toFixed(2) + 'px';
+      shotEl.style.top = drawOffsetY.toFixed(2) + 'px';
+      shotEl.style.width = drawW.toFixed(2) + 'px';
+      shotEl.style.height = drawH.toFixed(2) + 'px';
       const mapPoint = (x, y) => ({
         x: pageRect.left + drawOffsetX + (num(x) / sourceW) * drawW,
         y: pageRect.top + drawOffsetY + (num(y) / sourceH) * drawH
       });
 
-      const focusW = num(action?.target_w || 0);
-      const focusH = num(action?.target_h || 0);
-      const hasFocus = focusW > 0 && focusH > 0;
-      const focusX = num(action?.target_x || 0);
-      const focusY = num(action?.target_y || 0);
-      if (hasFocus) {
-        const topLeft = mapPoint(focusX, focusY);
-        const bottomRight = mapPoint(focusX + focusW, focusY + focusH);
-        const mappedW = Math.max(8, bottomRight.x - topLeft.x);
-        const mappedH = Math.max(8, bottomRight.y - topLeft.y);
+      let mappedCursor = mapPoint(cursorX, cursorY);
+      if (hasRawFocus && (actionType === 'click' || actionType === 'type')) {
+        mappedCursor = mapPoint(rawFocusX + (rawFocusW * 0.5), rawFocusY + (rawFocusH * 0.5));
+      }
+      const cursorPx = mappedCursor.x;
+      const cursorPy = mappedCursor.y;
+      const cursorPageX = cursorPx - pageRect.left;
+      const cursorPageY = cursorPy - pageRect.top;
+
+      const focusAgeMs = tMs - actionStart;
+      const wantsFocus = actionType === 'click' || actionType === 'type';
+      const focusWindowMs = actionType === 'type' ? 1500 : 820;
+      const focusVisible = wantsFocus && focusAgeMs >= -20 && focusAgeMs <= focusWindowMs;
+      if (focusVisible) {
+        let boxX;
+        let boxY;
+        let boxW;
+        let boxH;
+
+        if (actionType === 'type') {
+          // Keep typing emphasis stable around the cursor instead of large DOM boxes.
+          boxW = clamp(pageRect.width * 0.32, 260, 520);
+          boxH = 58;
+          boxX = clamp(cursorPageX - (boxW * 0.5), 8, pageRect.width - boxW - 8);
+          boxY = clamp(cursorPageY - (boxH * 0.5), 8, pageRect.height - boxH - 8);
+        } else {
+          let useMappedBox = false;
+          if (rawFocusW > 0 && rawFocusH > 0) {
+            const topLeft = mapPoint(rawFocusX, rawFocusY);
+            const bottomRight = mapPoint(rawFocusX + rawFocusW, rawFocusY + rawFocusH);
+            const mappedW = Math.max(8, bottomRight.x - topLeft.x);
+            const mappedH = Math.max(8, bottomRight.y - topLeft.y);
+            const overlyLarge = mappedW > pageRect.width * 0.45 || mappedH > pageRect.height * 0.22;
+            if (!overlyLarge) {
+              useMappedBox = true;
+              boxX = clamp(topLeft.x - pageRect.left, 8, pageRect.width - mappedW - 8);
+              boxY = clamp(topLeft.y - pageRect.top, 8, pageRect.height - mappedH - 8);
+              boxW = mappedW;
+              boxH = mappedH;
+            }
+          }
+          if (!useMappedBox) {
+            boxW = 132;
+            boxH = 54;
+            boxX = clamp(cursorPageX - (boxW * 0.5), 8, pageRect.width - boxW - 8);
+            boxY = clamp(cursorPageY - (boxH * 0.5), 8, pageRect.height - boxH - 8);
+          }
+        }
+
         focusEl.style.opacity = '1';
-        focusEl.style.transform = 'translate(' + (topLeft.x - pageRect.left).toFixed(2) + 'px,' + (topLeft.y - pageRect.top).toFixed(2) + 'px)';
-        focusEl.style.width = mappedW.toFixed(2) + 'px';
-        focusEl.style.height = mappedH.toFixed(2) + 'px';
+        focusEl.style.transform = 'translate(' + boxX.toFixed(2) + 'px,' + boxY.toFixed(2) + 'px)';
+        focusEl.style.width = boxW.toFixed(2) + 'px';
+        focusEl.style.height = boxH.toFixed(2) + 'px';
       } else {
         focusEl.style.opacity = '0';
       }
 
       const noZoom = Boolean(manifest.no_zoom);
-      const targetZoom = noZoom ? 1.0 : (hasFocus ? 1.22 : 1.06);
+      const targetZoom = noZoom ? 1.0 : (focusVisible ? 1.18 : 1.06);
       this.zoom += (targetZoom - this.zoom) * 0.05;
       const targetCameraX = noZoom ? 0 : clamp(-(cursorX - (sourceW * 0.5)) * 0.25, -220, 220);
       const targetCameraY = noZoom ? 0 : clamp(-(cursorY - (sourceH * 0.5)) * 0.22, -170, 170);
       this.cameraX += (targetCameraX - this.cameraX) * 0.06;
       this.cameraY += (targetCameraY - this.cameraY) * 0.06;
       cameraEl.style.transform = 'translate3d(' + this.cameraX.toFixed(2) + 'px,' + this.cameraY.toFixed(2) + 'px,0) scale(' + this.zoom.toFixed(4) + ')';
+      cursorEl.style.transform = 'translate(' + (cursorPageX - 11).toFixed(2) + 'px,' + (cursorPageY - 11).toFixed(2) + 'px)';
 
-      const mappedCursor = mapPoint(cursorX, cursorY);
-      const cursorPx = mappedCursor.x;
-      const cursorPy = mappedCursor.y;
-      cursorEl.style.transform = 'translate(' + cursorPx.toFixed(2) + 'px,' + cursorPy.toFixed(2) + 'px)';
-
-      const actionType = String(action?.action_type || '');
-      const pulseTypes = actionType === 'click' || actionType === 'press';
+      const pulseTypes = actionType === 'click';
       const pulseWindowMs = 620;
       const pulseActive = pulseTypes && (tMs - actionStart) >= 0 && (tMs - actionStart) <= pulseWindowMs;
       const pulseProgress = clamp((tMs - actionStart) / pulseWindowMs, 0, 1);
       const pulseOpacity = pulseActive ? (1 - pulseProgress) : 0;
       pulseEl.style.opacity = pulseOpacity.toFixed(3);
-      pulseEl.style.transform = 'translate(' + cursorPx.toFixed(2) + 'px,' + cursorPy.toFixed(2) + 'px) scale(' + (0.70 + pulseProgress * 2.15).toFixed(3) + ')';
+      pulseEl.style.transform = 'translate(' + (cursorPageX - 23).toFixed(2) + 'px,' + (cursorPageY - 23).toFixed(2) + 'px) scale(' + (0.70 + pulseProgress * 2.15).toFixed(3) + ')';
 
       if (action) {
         const label = String(action.action_type || '') + ' • ' + String(action.id || '');
