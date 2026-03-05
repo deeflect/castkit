@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -116,8 +117,9 @@ pub fn render_screenstudio(
     transcript: &ExecutionTranscript,
     opts: RenderOptions,
 ) -> Result<RenderArtifacts> {
-    let (snapshots, scene_cues, keystrokes, duration_secs) = build_timeline(transcript);
-    let overlay_events = build_overlay_events(&transcript.overlay_events);
+    let (snapshots, scene_cues, keystrokes, duration_secs, step_anchors) =
+        build_timeline(transcript);
+    let overlay_events = build_overlay_events(&transcript.overlay_events, &step_anchors);
     let duration_secs = duration_secs.max(max_overlay_end_secs(&overlay_events));
     let fps = opts.fps.max(24);
 
@@ -207,8 +209,18 @@ pub fn render_screenstudio(
     })
 }
 
-fn build_overlay_events(events: &[OverlayEvent]) -> Vec<OverlayEvent> {
+fn build_overlay_events(
+    events: &[OverlayEvent],
+    step_anchors: &BTreeMap<String, u64>,
+) -> Vec<OverlayEvent> {
     let mut out = events.to_vec();
+    for event in &mut out {
+        if let Some(anchor_ms) = step_anchors.get(&event.step_id) {
+            // Render overlays when the corresponding step appears in the timeline, not when
+            // command execution happened on wall clock.
+            event.t_ms = *anchor_ms;
+        }
+    }
     out.sort_by_key(|event| event.t_ms);
     out
 }
@@ -496,12 +508,19 @@ fn transcode_output(
 
 fn build_timeline(
     transcript: &ExecutionTranscript,
-) -> (Vec<RenderSnapshot>, Vec<SceneCue>, Vec<KeyStroke>, f32) {
+) -> (
+    Vec<RenderSnapshot>,
+    Vec<SceneCue>,
+    Vec<KeyStroke>,
+    f32,
+    BTreeMap<String, u64>,
+) {
     let mut snapshots = Vec::new();
     let mut scene_cues = Vec::new();
     let mut lines = Vec::<String>::new();
     let mut t = 0.0f32;
     let mut keystrokes = Vec::new();
+    let mut step_anchors = BTreeMap::new();
 
     push_snapshot(&mut snapshots, t, &lines, 0, 0, SnapshotPhase::Idle);
 
@@ -512,6 +531,7 @@ fn build_timeline(
         &mut t,
         "Setup",
         &transcript.setup,
+        &mut step_anchors,
     );
 
     for scene in &transcript.scenes {
@@ -539,6 +559,7 @@ fn build_timeline(
                 &step.run,
             );
             stream_output(&mut snapshots, &mut lines, &mut t, step);
+            step_anchors.insert(step.id.clone(), (t * 1000.0).round() as u64);
             t += 0.20;
             push_snapshot(
                 &mut snapshots,
@@ -569,6 +590,7 @@ fn build_timeline(
         &mut t,
         "Checks",
         &transcript.checks,
+        &mut step_anchors,
     );
     append_group_steps(
         &mut snapshots,
@@ -577,10 +599,11 @@ fn build_timeline(
         &mut t,
         "Cleanup",
         &transcript.cleanup,
+        &mut step_anchors,
     );
 
     let duration = (t + 0.8).max(4.0);
-    (snapshots, scene_cues, keystrokes, duration)
+    (snapshots, scene_cues, keystrokes, duration, step_anchors)
 }
 
 fn append_group_steps(
@@ -590,6 +613,7 @@ fn append_group_steps(
     t: &mut f32,
     label: &str,
     steps: &[StepRunRecord],
+    step_anchors: &mut BTreeMap<String, u64>,
 ) {
     if steps.is_empty() {
         return;
@@ -609,6 +633,7 @@ fn append_group_steps(
     for step in steps {
         type_command(snapshots, lines, keystrokes, t, &step.run);
         stream_output(snapshots, lines, t, step);
+        step_anchors.insert(step.id.clone(), (*t * 1000.0).round() as u64);
         *t += 0.12;
         push_snapshot(
             snapshots,
@@ -1035,7 +1060,7 @@ mod tests {
             overlay_events: vec![],
             web_actions: vec![],
         };
-        let (snapshots, _, _, duration) = build_timeline(&transcript);
+        let (snapshots, _, _, duration, _) = build_timeline(&transcript);
         assert!(!snapshots.is_empty());
         assert!(duration >= 4.0);
     }
@@ -1094,9 +1119,28 @@ mod tests {
                 enter: crate::script::ArtifactEnter::Slide,
             },
         ];
-        let sorted = build_overlay_events(&events);
+        let sorted = build_overlay_events(&events, &BTreeMap::new());
         assert_eq!(sorted[0].step_id, "a");
         assert_eq!(sorted[1].step_id, "b");
+    }
+
+    #[test]
+    fn overlay_events_follow_step_anchor_timing() {
+        let events = vec![OverlayEvent {
+            t_ms: 25,
+            step_id: "step_01".to_string(),
+            artifact_type: crate::execute::transcript::OverlayArtifactType::ResultCard,
+            title: None,
+            image_path: None,
+            result_items: vec![],
+            position: crate::script::ArtifactPosition::TopRight,
+            show_ms: 1200,
+            enter: crate::script::ArtifactEnter::Fade,
+        }];
+        let mut anchors = BTreeMap::new();
+        anchors.insert("step_01".to_string(), 1830);
+        let sorted = build_overlay_events(&events, &anchors);
+        assert_eq!(sorted[0].t_ms, 1830);
     }
 
     #[test]

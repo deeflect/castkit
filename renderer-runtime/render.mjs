@@ -467,6 +467,7 @@ async function main() {
     max-width: 520px;
     min-width: 260px;
     opacity: 0;
+    z-index: 6;
     will-change: transform, opacity;
     pointer-events: none;
   }

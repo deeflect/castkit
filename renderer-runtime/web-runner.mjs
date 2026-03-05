@@ -24,6 +24,20 @@ function asString(value) {
   return typeof value === 'string' ? value : '';
 }
 
+function safeFilePart(value) {
+  const raw = asString(value).trim().toLowerCase();
+  return raw.replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'step';
+}
+
+async function captureActionScreenshot(page, cwd, actionId, index) {
+  const dir = path.resolve(cwd, '.castkit', 'web-capture');
+  await fs.mkdir(dir, { recursive: true });
+  const file = `${String(index).padStart(3, '0')}-${safeFilePart(actionId)}.png`;
+  const outputPath = path.join(dir, file);
+  await page.screenshot({ path: outputPath, fullPage: false });
+  return outputPath;
+}
+
 function toUrl(rawUrl, baseUrl) {
   const input = asString(rawUrl).trim();
   if (!input) return '';
@@ -79,7 +93,8 @@ async function runActions(payload, cwd) {
   let firstError = null;
 
   try {
-    for (const action of actions) {
+    for (let index = 0; index < actions.length; index += 1) {
+      const action = actions[index];
       const actionType = asString(action.type);
       const actionStart = Date.now();
       let status = 'ok';
@@ -156,6 +171,20 @@ async function runActions(payload, cwd) {
         status = 'failed';
         error = err?.message || String(err);
         if (!firstError) firstError = error;
+      }
+
+      // Always capture a frame after each action so the renderer has concrete web visuals.
+      if (!screenshotPath) {
+        try {
+          screenshotPath = await captureActionScreenshot(
+            page,
+            cwd,
+            asString(action.id),
+            index,
+          );
+        } catch {
+          screenshotPath = null;
+        }
       }
 
       const bbox = await maybeBoundingBox(page, asString(action.selector).trim());

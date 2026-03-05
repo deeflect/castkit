@@ -294,31 +294,39 @@ async function main() {
     width: 100%;
     height: calc(100% - 46px);
     overflow: hidden;
+    background: linear-gradient(165deg, rgba(10, 16, 28, 0.92), rgba(12, 20, 34, 0.88));
   }
   #page {
     position: absolute;
-    left: 70px;
-    top: 50px;
-    width: 1440px;
-    height: 900px;
+    left: 28px;
+    top: 22px;
+    right: 28px;
+    bottom: 22px;
     border-radius: 12px;
-    background: linear-gradient(145deg, rgba(244, 248, 255, 0.98), rgba(229, 238, 250, 0.96));
+    background: linear-gradient(145deg, rgba(19, 31, 50, 0.98), rgba(13, 24, 40, 0.96));
     overflow: hidden;
-    box-shadow: 0 20px 38px rgba(0, 0, 0, 0.22);
+    border: 1px solid rgba(171, 197, 232, 0.20);
+    box-shadow: 0 20px 38px rgba(0, 0, 0, 0.28);
   }
   #shot {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background: rgba(8, 14, 24, 0.82);
     opacity: 0;
     transition: opacity 120ms linear;
   }
   #placeholder {
     position: absolute;
     inset: 0;
-    background: linear-gradient(160deg, #f6fbff, #e8f1fc);
+    background:
+      radial-gradient(900px 560px at 14% 18%, rgba(66, 108, 162, 0.26), transparent 56%),
+      radial-gradient(900px 560px at 82% 74%, rgba(58, 97, 150, 0.20), transparent 53%),
+      linear-gradient(160deg, rgba(18, 30, 48, 0.94), rgba(11, 20, 34, 0.92));
+    opacity: 1;
+    transition: opacity 120ms linear;
   }
   #focus {
     position: absolute;
@@ -444,6 +452,7 @@ async function main() {
 
       const pageEl = document.getElementById('page');
       const shotEl = document.getElementById('shot');
+      const placeholderEl = document.getElementById('placeholder');
       const focusEl = document.getElementById('focus');
       const cursorEl = document.getElementById('cursor');
       const pulseEl = document.getElementById('pulse');
@@ -460,8 +469,10 @@ async function main() {
       if (activeShot) {
         if (shotEl.src !== activeShot) shotEl.src = activeShot;
         shotEl.style.opacity = '1';
+        placeholderEl.style.opacity = '0.05';
       } else {
         shotEl.style.opacity = '0';
+        placeholderEl.style.opacity = '1';
       }
 
       const actionStart = action ? num(action.t_ms) : 0;
@@ -476,16 +487,33 @@ async function main() {
       const cursorX = curX + ((nextX - curX) * alpha);
       const cursorY = curY + ((nextY - curY) * alpha);
 
+      const sourceW = Math.max(1, num(shotEl.naturalWidth || 1440));
+      const sourceH = Math.max(1, num(shotEl.naturalHeight || 900));
+      const pageRect = pageEl.getBoundingClientRect();
+      const fitScale = Math.min(pageRect.width / sourceW, pageRect.height / sourceH);
+      const drawW = sourceW * fitScale;
+      const drawH = sourceH * fitScale;
+      const drawOffsetX = (pageRect.width - drawW) * 0.5;
+      const drawOffsetY = (pageRect.height - drawH) * 0.5;
+      const mapPoint = (x, y) => ({
+        x: pageRect.left + drawOffsetX + (num(x) / sourceW) * drawW,
+        y: pageRect.top + drawOffsetY + (num(y) / sourceH) * drawH
+      });
+
       const focusW = num(action?.target_w || 0);
       const focusH = num(action?.target_h || 0);
       const hasFocus = focusW > 0 && focusH > 0;
       const focusX = num(action?.target_x || 0);
       const focusY = num(action?.target_y || 0);
       if (hasFocus) {
+        const topLeft = mapPoint(focusX, focusY);
+        const bottomRight = mapPoint(focusX + focusW, focusY + focusH);
+        const mappedW = Math.max(8, bottomRight.x - topLeft.x);
+        const mappedH = Math.max(8, bottomRight.y - topLeft.y);
         focusEl.style.opacity = '1';
-        focusEl.style.transform = 'translate(' + focusX.toFixed(2) + 'px,' + focusY.toFixed(2) + 'px)';
-        focusEl.style.width = focusW.toFixed(2) + 'px';
-        focusEl.style.height = focusH.toFixed(2) + 'px';
+        focusEl.style.transform = 'translate(' + (topLeft.x - pageRect.left).toFixed(2) + 'px,' + (topLeft.y - pageRect.top).toFixed(2) + 'px)';
+        focusEl.style.width = mappedW.toFixed(2) + 'px';
+        focusEl.style.height = mappedH.toFixed(2) + 'px';
       } else {
         focusEl.style.opacity = '0';
       }
@@ -493,15 +521,15 @@ async function main() {
       const noZoom = Boolean(manifest.no_zoom);
       const targetZoom = noZoom ? 1.0 : (hasFocus ? 1.10 : 1.02);
       this.zoom += (targetZoom - this.zoom) * 0.05;
-      const targetCameraX = noZoom ? 0 : clamp(-(cursorX - 720) * 0.10, -95, 95);
-      const targetCameraY = noZoom ? 0 : clamp(-(cursorY - 450) * 0.10, -80, 80);
+      const targetCameraX = noZoom ? 0 : clamp(-(cursorX - (sourceW * 0.5)) * 0.10, -95, 95);
+      const targetCameraY = noZoom ? 0 : clamp(-(cursorY - (sourceH * 0.5)) * 0.10, -80, 80);
       this.cameraX += (targetCameraX - this.cameraX) * 0.06;
       this.cameraY += (targetCameraY - this.cameraY) * 0.06;
       cameraEl.style.transform = 'translate3d(' + this.cameraX.toFixed(2) + 'px,' + this.cameraY.toFixed(2) + 'px,0) scale(' + this.zoom.toFixed(4) + ')';
 
-      const pageRect = pageEl.getBoundingClientRect();
-      const cursorPx = pageRect.left + (cursorX / 1440) * pageRect.width;
-      const cursorPy = pageRect.top + (cursorY / 900) * pageRect.height;
+      const mappedCursor = mapPoint(cursorX, cursorY);
+      const cursorPx = mappedCursor.x;
+      const cursorPy = mappedCursor.y;
       cursorEl.style.transform = 'translate(' + cursorPx.toFixed(2) + 'px,' + cursorPy.toFixed(2) + 'px)';
 
       const actionType = String(action?.action_type || '');
