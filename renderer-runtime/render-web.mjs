@@ -265,8 +265,8 @@ async function main() {
     justify-content: center;
   }
   #camera {
-    width: 1720px;
-    height: 970px;
+    width: 1860px;
+    height: 1040px;
     transform-origin: center center;
     will-change: transform;
   }
@@ -314,19 +314,19 @@ async function main() {
     width: 100%;
     height: calc(100% - 46px);
     overflow: hidden;
-    background: linear-gradient(165deg, rgba(10, 16, 28, 0.92), rgba(12, 20, 34, 0.88));
+    background: rgba(10, 16, 28, 0.92);
   }
   #page {
     position: absolute;
-    left: 28px;
-    top: 22px;
-    right: 28px;
-    bottom: 22px;
-    border-radius: 12px;
-    background: linear-gradient(145deg, rgba(19, 31, 50, 0.98), rgba(13, 24, 40, 0.96));
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 0;
+    background: rgba(13, 24, 40, 0.96);
     overflow: hidden;
-    border: 1px solid rgba(171, 197, 232, 0.20);
-    box-shadow: 0 20px 38px rgba(0, 0, 0, 0.28);
+    border: 0;
+    box-shadow: none;
   }
   #shot {
     position: absolute;
@@ -353,6 +353,7 @@ async function main() {
     border-radius: 9px;
     border: 2px solid var(--focus);
     background: var(--focus-bg);
+    box-shadow: 0 0 24px rgba(123, 203, 255, 0.28), inset 0 0 0 1px rgba(214, 242, 255, 0.35);
     opacity: 0;
     pointer-events: none;
     transition: opacity 80ms linear;
@@ -360,22 +361,24 @@ async function main() {
   }
   #cursor {
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    background: rgba(24, 35, 56, 0.94);
-    border: 2px solid #f5fbff;
-    box-shadow: 0 6px 15px rgba(0,0,0,0.26);
-    transform: translate(-9px, -9px);
+    background: rgba(246, 252, 255, 0.96);
+    border: 3px solid rgba(20, 33, 54, 0.92);
+    box-shadow: 0 8px 18px rgba(0,0,0,0.34), 0 0 10px rgba(219, 242, 255, 0.35);
+    transform: translate(-11px, -11px);
     will-change: transform;
   }
   #pulse {
     position: absolute;
-    width: 30px;
-    height: 30px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
-    border: 2px solid rgba(111, 199, 255, 0.92);
-    transform: translate(-15px, -15px) scale(0.8);
+    border: 3px solid rgba(114, 214, 255, 0.98);
+    background: rgba(110, 207, 255, 0.16);
+    box-shadow: 0 0 26px rgba(123, 212, 255, 0.55);
+    transform: translate(-23px, -23px) scale(0.70);
     opacity: 0;
     pointer-events: none;
   }
@@ -539,10 +542,10 @@ async function main() {
       }
 
       const noZoom = Boolean(manifest.no_zoom);
-      const targetZoom = noZoom ? 1.0 : (hasFocus ? 1.10 : 1.02);
+      const targetZoom = noZoom ? 1.0 : (hasFocus ? 1.22 : 1.06);
       this.zoom += (targetZoom - this.zoom) * 0.05;
-      const targetCameraX = noZoom ? 0 : clamp(-(cursorX - (sourceW * 0.5)) * 0.10, -95, 95);
-      const targetCameraY = noZoom ? 0 : clamp(-(cursorY - (sourceH * 0.5)) * 0.10, -80, 80);
+      const targetCameraX = noZoom ? 0 : clamp(-(cursorX - (sourceW * 0.5)) * 0.25, -220, 220);
+      const targetCameraY = noZoom ? 0 : clamp(-(cursorY - (sourceH * 0.5)) * 0.22, -170, 170);
       this.cameraX += (targetCameraX - this.cameraX) * 0.06;
       this.cameraY += (targetCameraY - this.cameraY) * 0.06;
       cameraEl.style.transform = 'translate3d(' + this.cameraX.toFixed(2) + 'px,' + this.cameraY.toFixed(2) + 'px,0) scale(' + this.zoom.toFixed(4) + ')';
@@ -553,11 +556,13 @@ async function main() {
       cursorEl.style.transform = 'translate(' + cursorPx.toFixed(2) + 'px,' + cursorPy.toFixed(2) + 'px)';
 
       const actionType = String(action?.action_type || '');
-      const pulseActive = actionType === 'click' && (tMs - actionStart) >= 0 && (tMs - actionStart) <= 280;
-      const pulseProgress = clamp((tMs - actionStart) / 280, 0, 1);
+      const pulseTypes = actionType === 'click' || actionType === 'press';
+      const pulseWindowMs = 620;
+      const pulseActive = pulseTypes && (tMs - actionStart) >= 0 && (tMs - actionStart) <= pulseWindowMs;
+      const pulseProgress = clamp((tMs - actionStart) / pulseWindowMs, 0, 1);
       const pulseOpacity = pulseActive ? (1 - pulseProgress) : 0;
       pulseEl.style.opacity = pulseOpacity.toFixed(3);
-      pulseEl.style.transform = 'translate(' + cursorPx.toFixed(2) + 'px,' + cursorPy.toFixed(2) + 'px) scale(' + (0.8 + pulseProgress * 1.3).toFixed(3) + ')';
+      pulseEl.style.transform = 'translate(' + cursorPx.toFixed(2) + 'px,' + cursorPy.toFixed(2) + 'px) scale(' + (0.70 + pulseProgress * 2.15).toFixed(3) + ')';
 
       if (action) {
         const label = String(action.action_type || '') + ' • ' + String(action.id || '');

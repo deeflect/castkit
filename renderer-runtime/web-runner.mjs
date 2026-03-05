@@ -57,6 +57,16 @@ async function maybeBoundingBox(page, selector) {
   }
 }
 
+async function moveMouseToTarget(page, selector) {
+  if (!selector) return null;
+  const bbox = await maybeBoundingBox(page, selector);
+  if (!bbox) return null;
+  const x = bbox.x + bbox.width * 0.5;
+  const y = bbox.y + bbox.height * 0.5;
+  await page.mouse.move(x, y, { steps: 10 });
+  return { bbox, x, y };
+}
+
 function recordFromAction(action, actionType, tMs, durationMs, status, error, bbox, cursor, screenshotPath) {
   return {
     id: asString(action.id),
@@ -112,6 +122,7 @@ async function runActions(payload, cwd) {
           case 'click': {
             const selector = asString(action.selector).trim();
             if (!selector) throw new Error('click action requires selector');
+            await moveMouseToTarget(page, selector);
             await page.locator(selector).first().click({ timeout: 10000 });
             break;
           }
@@ -119,6 +130,7 @@ async function runActions(payload, cwd) {
             const selector = asString(action.selector).trim();
             const text = asString(action.text);
             if (!selector) throw new Error('type action requires selector');
+            await moveMouseToTarget(page, selector);
             await page.locator(selector).first().click({ timeout: 10000 });
             await page.keyboard.type(text, { delay: 38 });
             break;
@@ -155,7 +167,8 @@ async function runActions(payload, cwd) {
             if (!outputPathRaw) throw new Error('screenshot action requires path');
             screenshotPath = path.resolve(cwd, outputPathRaw);
             await fs.mkdir(path.dirname(screenshotPath), { recursive: true });
-            await page.screenshot({ path: screenshotPath, fullPage: true });
+            // Keep screenshots viewport-scoped so web video framing remains consistent.
+            await page.screenshot({ path: screenshotPath, fullPage: false });
             break;
           }
           case 'scroll_to': {
