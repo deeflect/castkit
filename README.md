@@ -9,6 +9,13 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/language-Rust-orange?style=flat-square" alt="Rust" />
+  <img src="https://img.shields.io/badge/output-MP4%20%7C%20WebM%20%7C%20GIF-blue?style=flat-square" alt="MP4/WebM/GIF" />
+  <img src="https://img.shields.io/badge/agent--native-yes-brightgreen?style=flat-square" alt="Agent-native" />
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT" />
+</p>
+
+<p align="center">
   <a href="#install">Install</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#agent-flow">Agent Flow</a> •
