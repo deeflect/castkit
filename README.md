@@ -246,4 +246,6 @@ Built by [Dee](https://deeflect.com). Started as "I just need one demo gif" and 
 
 Star if castkit shipped you a demo without you having to record it. [File an issue](https://github.com/deeflect/castkit/issues) if it crashes on a CLI it should have understood.
 
+Need ridiculous tooling like this for your product? [dee.agency](https://dee.agency?utm_source=castkit&utm_medium=readme).
+
 [deeflect.com](https://deeflect.com) · [Wikidata](https://www.wikidata.org/entity/Q138828544) · [LinkedIn](https://www.linkedin.com/in/dkargaev/) · [X](https://x.com/deeflectcom)
